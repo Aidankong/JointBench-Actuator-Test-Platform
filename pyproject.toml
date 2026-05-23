@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jointbench"
+version = "0.1.0"
+description = "Robot joint actuator test and performance analysis MVP."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "Jinja2>=3.1",
+    "numpy>=2.0",
+    "PySide6>=6.10",
+    "pyqtgraph>=0.14",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

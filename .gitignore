@@ -17,9 +17,9 @@ dist/
 *.egg-info/
 
 # Local app data
-reports/
-data/
-logs/
+/reports/
+/data/
+/logs/
 *.db
 *.sqlite
 
