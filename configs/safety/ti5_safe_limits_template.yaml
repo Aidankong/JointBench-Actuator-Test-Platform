@@ -1,7 +1,9 @@
 limits:
   # Conservative commissioning limits. Adjust after fixture and actuator review.
-  min_position_deg: -5
-  max_position_deg: 5
+  # The adapter still limits the first target command to +/-5 deg.
+  # Soft limits leave a small margin for normal settling behavior.
+  min_position_deg: -6
+  max_position_deg: 6
   max_speed_dps: 30
   max_current_a: 3
   max_temperature_c: 60

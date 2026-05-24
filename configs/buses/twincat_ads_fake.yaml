@@ -1,0 +1,8 @@
+protocol: twincat_ads
+
+ads:
+  ams_net_id: "127.0.0.1.1.1"
+  ams_port: 851
+  host: "fake"
+  timeout_ms: 1000
+  cycle_time_ms: 10

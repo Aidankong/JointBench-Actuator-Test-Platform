@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jointbench"
-version = "0.2.0"
+version = "0.3.0"
 description = "Robot joint actuator test and performance analysis MVP."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,6 +17,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ads = [
+    "pyads>=3.4",
+]
 can = [
     "canopen>=2.4",
     "python-can>=4.4",

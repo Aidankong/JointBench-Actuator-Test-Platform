@@ -53,6 +53,7 @@ class ProtocolSetupDialog(QDialog):
         self.protocol_combo.addItem("Mock", ProtocolType.MOCK.value)
         self.protocol_combo.addItem("CANopen CiA402", ProtocolType.CANOPEN_CIA402.value)
         self.protocol_combo.addItem("EtherCAT CoE CiA402", ProtocolType.ETHERCAT_COE_CIA402.value)
+        self.protocol_combo.addItem("TwinCAT ADS", ProtocolType.TWINCAT_ADS.value)
         protocol_row.addWidget(self.protocol_combo)
         protocol_row.addStretch(1)
         root.addLayout(protocol_row)

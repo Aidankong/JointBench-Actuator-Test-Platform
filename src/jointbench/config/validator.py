@@ -28,6 +28,28 @@ def validate_bundle(bundle: ProtocolConfigBundle) -> ValidationReport:
         if "esi" not in bundle.artifacts:
             issues.append(ValidationIssue("warning", "ESI XML is not loaded; PDO validation will be unavailable."))
 
+    if protocol is ProtocolType.TWINCAT_ADS:
+        if not bundle.bus.ams_net_id:
+            issues.append(ValidationIssue("error", "TwinCAT ADS ams_net_id is required."))
+        if not bundle.bus.ams_port:
+            issues.append(ValidationIssue("error", "TwinCAT ADS ams_port is required."))
+        if not bundle.bus.host:
+            issues.append(ValidationIssue("warning", "TwinCAT ADS host is not configured; local route will be used."))
+        required_symbols = [
+            "bEnable",
+            "bStart",
+            "bStop",
+            "fTargetPositionDeg",
+            "bOperationEnabled",
+            "fActualPositionDeg",
+            "fActualVelocityDps",
+            "fCurrentA",
+            "fTemperatureC",
+        ]
+        for symbol in required_symbols:
+            if not _resolve_ads_symbol(bundle, symbol):
+                issues.append(ValidationIssue("error", f"TwinCAT ADS symbol {symbol} is missing."))
+
     if bundle.safety is None:
         issues.append(ValidationIssue("error", "Safety config is required for real bus protocols."))
     elif not bundle.safety.has_motion_limits:
@@ -47,3 +69,7 @@ def validate_bundle(bundle: ProtocolConfigBundle) -> ValidationReport:
 
     motion_allowed = not [issue for issue in issues if issue.level == "error"]
     return ValidationReport(issues, motion_allowed=motion_allowed)
+
+
+def _resolve_ads_symbol(bundle: ProtocolConfigBundle, name: str) -> str:
+    return bundle.device.ads_symbols.get(name, f"{bundle.device.ads_symbol_prefix}.{name}")

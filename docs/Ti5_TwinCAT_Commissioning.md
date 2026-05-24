@@ -1,0 +1,50 @@
+# Ti5 TwinCAT Commissioning Checklist
+
+Use this checklist for the first Ti5 harmonic joint commissioning run.
+
+## TwinCAT Preparation
+
+1. Install TwinCAT 3 XAE on the development PC. XAE includes XAR runtime components.
+2. Install or import the Ti5 ESI XML.
+3. Connect the Ti5 axis to a dedicated EtherCAT port.
+4. Scan EtherCAT devices in TwinCAT and confirm the Ti5 slave appears.
+5. Map PDOs and verify CiA402 statusword, controlword, actual position, and target position.
+6. Add the PLC interface from `twincat/src`.
+7. Confirm `MAIN.stJointBench.*` symbols are visible in the PLC symbol table.
+8. Activate configuration and start TwinCAT in Run mode.
+
+## JointBench Preparation
+
+Load these templates in `Protocol Setup`:
+
+- `configs/buses/twincat_ads_local.yaml`
+- `configs/devices/ti5_twincat_ads_template.yaml`
+- `configs/safety/ti5_safe_limits_template.yaml`
+- `configs/tests/ti5_ads_position_step_5deg.yaml`
+
+Edit the templates for the actual station:
+
+- AMS Net ID
+- ADS host
+- Ti5 vendor ID / product code / revision
+- Encoder resolution, gear ratio, direction, zero offset
+- Current and temperature limits
+- Fixture-specific software limits
+
+## First Motion
+
+1. Use an unloaded axis or a safe fixture.
+2. Use a current-limited power supply.
+3. Confirm physical emergency stop.
+4. Confirm TwinCAT can enable the axis safely.
+5. In JointBench, click `Scan` and confirm PLC metadata.
+6. Start only the 5 deg profile-position test.
+7. Review `raw_data.csv`, `report.md`, and `report.html`.
+
+## Failure Handling
+
+- ADS connection failure: check TwinCAT Router, AMS Net ID, port 851, and host.
+- Symbol read failure: verify PLC symbol names and that symbol download is enabled.
+- Operation enabled timeout: check PLC state machine and Ti5 drive faults.
+- Motion blocked by JointBench: check safety YAML, scaling YAML, and first target limit.
+- Drive fault: use TwinCAT diagnostics first, then retry after the PLC exposes a clean fault-reset flow.

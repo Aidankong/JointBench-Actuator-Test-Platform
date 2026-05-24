@@ -23,6 +23,11 @@ MD_TEMPLATE = Template(
 - Protocol: {{ result.device_info.protocol }}
 - Transport: {{ result.device_info.transport_mode }}
 - Firmware: {{ result.device_info.firmware_version }}
+- ADS Host: {{ result.device_info.ads_host if result.device_info.ads_host else "N/A" }}
+- AMS Net ID: {{ result.device_info.ams_net_id if result.device_info.ams_net_id else "N/A" }}
+- AMS Port: {{ result.device_info.ams_port if result.device_info.ams_port is not none else "N/A" }}
+- ADS Symbol Prefix: {{ result.device_info.ads_symbol_prefix if result.device_info.ads_symbol_prefix else "N/A" }}
+- TwinCAT Route Status: {{ result.device_info.twincat_route_status if result.device_info.twincat_route_status else "N/A" }}
 - Operation Enabled: {{ result.operation_enabled if result.operation_enabled is not none else "N/A" }}
 - Node ID: {{ result.device_info.node_id if result.device_info.node_id is not none else "N/A" }}
 - Slave Index: {{ result.device_info.slave_index if result.device_info.slave_index is not none else "N/A" }}
@@ -118,6 +123,11 @@ HTML_TEMPLATE = Template(
     <tr><th>Protocol</th><td>{{ result.device_info.protocol }}</td></tr>
     <tr><th>Transport</th><td>{{ result.device_info.transport_mode }}</td></tr>
     <tr><th>Firmware</th><td>{{ result.device_info.firmware_version }}</td></tr>
+    <tr><th>ADS Host</th><td>{{ result.device_info.ads_host if result.device_info.ads_host else "N/A" }}</td></tr>
+    <tr><th>AMS Net ID</th><td>{{ result.device_info.ams_net_id if result.device_info.ams_net_id else "N/A" }}</td></tr>
+    <tr><th>AMS Port</th><td>{{ result.device_info.ams_port if result.device_info.ams_port is not none else "N/A" }}</td></tr>
+    <tr><th>ADS Symbol Prefix</th><td>{{ result.device_info.ads_symbol_prefix if result.device_info.ads_symbol_prefix else "N/A" }}</td></tr>
+    <tr><th>TwinCAT Route Status</th><td>{{ result.device_info.twincat_route_status if result.device_info.twincat_route_status else "N/A" }}</td></tr>
     <tr><th>Operation Enabled</th><td>{{ result.operation_enabled if result.operation_enabled is not none else "N/A" }}</td></tr>
     <tr><th>Node ID</th><td>{{ result.device_info.node_id if result.device_info.node_id is not none else "N/A" }}</td></tr>
     <tr><th>Slave Index</th><td>{{ result.device_info.slave_index if result.device_info.slave_index is not none else "N/A" }}</td></tr>

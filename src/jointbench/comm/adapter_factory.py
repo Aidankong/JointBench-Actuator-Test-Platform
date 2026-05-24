@@ -4,6 +4,7 @@ from jointbench.comm.base_adapter import BaseAdapter
 from jointbench.comm.canopen_cia402_adapter import CanopenCiA402Adapter
 from jointbench.comm.ethercat_cia402_adapter import EthercatCiA402Adapter
 from jointbench.comm.mock_adapter import MockActuatorAdapter
+from jointbench.comm.twincat_ads_adapter import TwinCATAdsAdapter
 from jointbench.config.schemas import ProtocolConfigBundle, ProtocolType, ScanResult
 from jointbench.config.validator import validate_bundle
 from jointbench.exceptions import ConfigurationError
@@ -19,6 +20,8 @@ def create_adapter(bundle: ProtocolConfigBundle) -> BaseAdapter:
         return CanopenCiA402Adapter(bundle)
     if bundle.protocol is ProtocolType.ETHERCAT_COE_CIA402:
         return EthercatCiA402Adapter(bundle)
+    if bundle.protocol is ProtocolType.TWINCAT_ADS:
+        return TwinCATAdsAdapter(bundle)
     raise ConfigurationError(f"Unsupported protocol: {bundle.protocol.value}")
 
 
@@ -36,4 +39,6 @@ def scan_devices(bundle: ProtocolConfigBundle) -> list[ScanResult]:
         return CanopenCiA402Adapter.scan_devices(bundle)
     if bundle.protocol is ProtocolType.ETHERCAT_COE_CIA402:
         return EthercatCiA402Adapter.scan_devices(bundle)
+    if bundle.protocol is ProtocolType.TWINCAT_ADS:
+        return TwinCATAdsAdapter.scan_devices(bundle)
     raise ConfigurationError(f"Scanning is not implemented for {bundle.protocol.value}.")

@@ -115,6 +115,7 @@ def _parse_bus(data: dict[str, Any], protocol_override: ProtocolType | str | Non
     protocol = protocol_value if isinstance(protocol_value, ProtocolType) else ProtocolType(str(protocol_value))
     can_data = data.get("can", {}) or {}
     ethercat_data = data.get("ethercat", {}) or {}
+    ads_data = data.get("ads", {}) or {}
     if protocol is ProtocolType.CANOPEN_CIA402:
         return BusConfig(
             protocol=protocol,
@@ -133,6 +134,16 @@ def _parse_bus(data: dict[str, Any], protocol_override: ProtocolType | str | Non
             cycle_time_ms=_as_optional_float(ethercat_data.get("cycle_time_ms", 1.0)),
             distributed_clock=bool(ethercat_data.get("distributed_clock", False)),
         )
+    if protocol is ProtocolType.TWINCAT_ADS:
+        return BusConfig(
+            protocol=protocol,
+            interface="ads",
+            ams_net_id=_as_optional_str(ads_data.get("ams_net_id")),
+            ams_port=int(ads_data.get("ams_port", 851)),
+            host=_as_optional_str(ads_data.get("host")),
+            timeout_ms=int(ads_data.get("timeout_ms", 1000)),
+            cycle_time_ms=_as_optional_float(ads_data.get("cycle_time_ms", 10.0)),
+        )
     return BusConfig(protocol=protocol, interface="mock")
 
 
@@ -140,6 +151,7 @@ def _parse_device(data: dict[str, Any]) -> DeviceProfile:
     device_data = data.get("device", {}) or {}
     cia402_data = data.get("cia402", {}) or {}
     control_data = data.get("control", {}) or {}
+    ads_data = data.get("ads", {}) or {}
     object_map = CiA402ObjectMap(
         controlword=str(cia402_data.get("controlword", "0x6040:00")),
         statusword=str(cia402_data.get("statusword", "0x6041:00")),
@@ -163,6 +175,8 @@ def _parse_device(data: dict[str, Any]) -> DeviceProfile:
         preferred_mode=str(control_data.get("preferred_mode", "profile_position")),
         homing_required=bool(control_data.get("homing_required", False)),
         fault_reset_on_connect=bool(control_data.get("fault_reset_on_connect", False)),
+        ads_symbol_prefix=str(ads_data.get("symbol_prefix", "MAIN.stJointBench")),
+        ads_symbols={str(key): str(value) for key, value in (ads_data.get("symbols", {}) or {}).items()},
     )
 
 

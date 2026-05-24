@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.0">
+  <POU Name="FB_JointBenchAxis" PouType="FunctionBlock">
+    <Declaration><![CDATA[
+FUNCTION_BLOCK FB_JointBenchAxis
+VAR_IN_OUT
+    stIf : ST_JointBenchAds;
+END_VAR
+VAR_INPUT
+    fMinPositionDeg : LREAL := -6.0;
+    fMaxPositionDeg : LREAL := 6.0;
+END_VAR
+VAR
+    bStartEdge : R_TRIG;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(* Template logic only.
+   Replace the simulated assignments with Ti5 EtherCAT axis function blocks,
+   PDO variables, CiA402 state handling, and local safety interlocks. *)
+
+bStartEdge(CLK := stIf.bStart);
+
+IF stIf.bStop THEN
+    stIf.bBusy := FALSE;
+    stIf.bDone := FALSE;
+    stIf.bOperationEnabled := FALSE;
+    stIf.nControlword := 2; (* quick stop placeholder *)
+END_IF
+
+IF stIf.bResetFault THEN
+    stIf.bError := FALSE;
+    stIf.nErrorCode := 0;
+    stIf.nFaultCode := 0;
+END_IF
+
+IF stIf.bEnable AND NOT stIf.bError THEN
+    stIf.bReady := TRUE;
+    stIf.bOperationEnabled := TRUE;
+    stIf.nStatusword := 39; (* 0x0027 operation enabled placeholder *)
+ELSIF NOT stIf.bEnable THEN
+    stIf.bReady := FALSE;
+    stIf.bOperationEnabled := FALSE;
+    stIf.nStatusword := 64; (* 0x0040 switch on disabled placeholder *)
+END_IF
+
+IF bStartEdge.Q AND stIf.bOperationEnabled THEN
+    IF (stIf.fTargetPositionDeg < fMinPositionDeg) OR (stIf.fTargetPositionDeg > fMaxPositionDeg) THEN
+        stIf.bError := TRUE;
+        stIf.nErrorCode := 16#7001;
+    ELSE
+        stIf.bBusy := TRUE;
+        stIf.bDone := FALSE;
+        stIf.nControlword := 15; (* 0x000F enable operation placeholder *)
+    END_IF
+END_IF
+
+(* Simulated following behavior for template validation only. *)
+IF stIf.bBusy AND NOT stIf.bError THEN
+    stIf.fActualVelocityDps := (stIf.fTargetPositionDeg - stIf.fActualPositionDeg) * 20.0;
+    stIf.fActualPositionDeg := stIf.fActualPositionDeg + stIf.fActualVelocityDps * 0.001;
+    IF ABS(stIf.fTargetPositionDeg - stIf.fActualPositionDeg) < 0.05 THEN
+        stIf.fActualVelocityDps := 0.0;
+        stIf.fActualPositionDeg := stIf.fTargetPositionDeg;
+        stIf.bBusy := FALSE;
+        stIf.bDone := TRUE;
+    END_IF
+END_IF
+
+stIf.fCurrentA := 0.2;
+stIf.fTemperatureC := 31.0;
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

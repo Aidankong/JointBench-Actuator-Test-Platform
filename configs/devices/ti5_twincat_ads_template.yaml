@@ -1,0 +1,46 @@
+device:
+  name: Ti5 Harmonic Joint via TwinCAT ADS
+  vendor_id: null
+  product_code: null
+  revision_number: null
+  serial_number: null
+
+control:
+  preferred_mode: profile_position
+  homing_required: false
+  fault_reset_on_connect: false
+
+ads:
+  symbol_prefix: "MAIN.stJointBench"
+  symbols:
+    bEnable: "MAIN.stJointBench.bEnable"
+    bStart: "MAIN.stJointBench.bStart"
+    bStop: "MAIN.stJointBench.bStop"
+    bResetFault: "MAIN.stJointBench.bResetFault"
+    fTargetPositionDeg: "MAIN.stJointBench.fTargetPositionDeg"
+    bReady: "MAIN.stJointBench.bReady"
+    bBusy: "MAIN.stJointBench.bBusy"
+    bDone: "MAIN.stJointBench.bDone"
+    bError: "MAIN.stJointBench.bError"
+    bOperationEnabled: "MAIN.stJointBench.bOperationEnabled"
+    fActualPositionDeg: "MAIN.stJointBench.fActualPositionDeg"
+    fActualVelocityDps: "MAIN.stJointBench.fActualVelocityDps"
+    fCurrentA: "MAIN.stJointBench.fCurrentA"
+    fTemperatureC: "MAIN.stJointBench.fTemperatureC"
+    nStatusword: "MAIN.stJointBench.nStatusword"
+    nControlword: "MAIN.stJointBench.nControlword"
+    nFaultCode: "MAIN.stJointBench.nFaultCode"
+    nErrorCode: "MAIN.stJointBench.nErrorCode"
+    sDeviceName: "MAIN.stJointBench.sDeviceName"
+    nVendorId: "MAIN.stJointBench.nVendorId"
+    nProductCode: "MAIN.stJointBench.nProductCode"
+    nRevision: "MAIN.stJointBench.nRevision"
+
+scaling:
+  encoder_counts_per_rev: 524288
+  gear_ratio: 1.0
+  position_direction: 1
+  zero_offset_deg: 0.0
+  velocity_unit: degrees_per_second
+  current_scale_a_per_unit: 1.0
+  temperature_scale_c_per_unit: 1.0

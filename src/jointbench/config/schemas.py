@@ -11,6 +11,7 @@ class ProtocolType(str, Enum):
     MOCK = "mock"
     CANOPEN_CIA402 = "canopen_cia402"
     ETHERCAT_COE_CIA402 = "ethercat_coe_cia402"
+    TWINCAT_ADS = "twincat_ads"
     UART_SERVO = "uart_servo"
 
     @property
@@ -36,6 +37,10 @@ class BusConfig:
     heartbeat_timeout_ms: int = 500
     sdo_timeout_ms: int = 300
     distributed_clock: bool = False
+    ams_net_id: str | None = None
+    ams_port: int = 851
+    host: str | None = None
+    timeout_ms: int = 1000
 
     @property
     def is_fake_transport(self) -> bool:
@@ -79,6 +84,8 @@ class DeviceProfile:
     preferred_mode: str = "profile_position"
     homing_required: bool = False
     fault_reset_on_connect: bool = False
+    ads_symbol_prefix: str = "MAIN.stJointBench"
+    ads_symbols: dict[str, str] = field(default_factory=dict)
 
     def matches_identity(
         self,

@@ -18,6 +18,11 @@ class DeviceInfo:
     node_id: int | None = None
     slave_index: int | None = None
     transport_mode: str = "Mock"
+    ads_host: str | None = None
+    ams_net_id: str | None = None
+    ams_port: int | None = None
+    ads_symbol_prefix: str | None = None
+    twincat_route_status: str | None = None
 
 
 @dataclass

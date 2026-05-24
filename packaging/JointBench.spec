@@ -1,12 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import importlib.util
 
 project_root = Path(SPECPATH).parent
 
 datas = [
     (str(project_root / "configs"), "configs"),
     (str(project_root / "docs"), "docs"),
+    (str(project_root / "twincat"), "twincat"),
     (str(project_root / "JointBench_Product_Design_Report.md"), "."),
     (str(project_root / "README.md"), "."),
 ]
@@ -17,6 +19,9 @@ hiddenimports = [
     "PySide6.QtWidgets",
     "pyqtgraph",
 ]
+
+if importlib.util.find_spec("pyads") is not None:
+    hiddenimports.append("pyads")
 
 
 a = Analysis(

@@ -15,6 +15,7 @@ JointBench 面向机器人关节、电机模组、伺服执行器和产线测试
 - PASS / FAIL 自动判定
 - Markdown / HTML 报告生成
 - pytest 单元测试
+- TwinCAT ADS 产线主链路模板
 
 ## 快速开始
 
@@ -32,6 +33,9 @@ python -m pip install -e ".[can]"
 
 # EtherCAT CoE CiA402
 python -m pip install -e ".[ethercat]"
+
+# TwinCAT ADS production route
+python -m pip install -e ".[ads]"
 ```
 
 Windows 离线产线打包：
@@ -39,10 +43,13 @@ Windows 离线产线打包：
 ```powershell
 python -m pip install -e .
 .\scripts\build_windows.ps1
+
+# ADS-enabled package for TwinCAT production stations
+.\scripts\build_windows.ps1 -WithAds
 .\scripts\smoke_packaged_app.ps1
 ```
 
-打包产物建议命名为 `JointBench-v0.2.0-win64.zip`，用于 GitHub Release 或离线拷贝到产线电脑。
+打包产物建议命名为 `JointBench-v0.3.0-win64.zip`，用于 GitHub Release 或离线拷贝到产线电脑。
 
 启动后：
 
@@ -68,11 +75,13 @@ python -m jointbench --protocol-dialog-smoke-test
 - Mock
 - CANopen CiA402
 - EtherCAT CoE CiA402
+- TwinCAT ADS
 
 仓库内提供了离线 fake 配置，可用于无硬件验证协议配置、扫描和状态机流程：
 
 - `configs/buses/canopen_fake.yaml`
 - `configs/buses/ethercat_fake.yaml`
+- `configs/buses/twincat_ads_fake.yaml`
 - `configs/devices/sample_cia402_joint.yaml`
 - `configs/safety/default_joint_limits.yaml`
 - `configs/tests/position_step_5deg.yaml`
@@ -86,9 +95,32 @@ Ti5 EtherCAT 模板：
 - `configs/safety/ti5_safe_limits_template.yaml`
 - `configs/tests/ti5_position_step_5deg.yaml`
 
+Ti5 TwinCAT ADS 产线模板：
+
+- `configs/buses/twincat_ads_local.yaml`
+- `configs/devices/ti5_twincat_ads_template.yaml`
+- `configs/safety/ti5_safe_limits_template.yaml`
+- `configs/tests/ti5_ads_position_step_5deg.yaml`
+
+产线推荐路线：
+
+```text
+JointBench -> TwinCAT ADS -> TwinCAT XAR -> EtherCAT -> Ti5
+```
+
+研发备选路线：
+
+```text
+JointBench -> pysoem direct EtherCAT -> Ti5
+```
+
+不要让 TwinCAT 和 pysoem 同时控制同一块 EtherCAT 网卡。
+
 离线部署说明：
 
 - [Windows Offline Deployment](./docs/Windows_Offline_Deployment.md)
+- [TwinCAT ADS Integration](./docs/TwinCAT_ADS_Integration.md)
+- [Ti5 TwinCAT Commissioning](./docs/Ti5_TwinCAT_Commissioning.md)
 
 ## 输出文件
 
@@ -119,8 +151,8 @@ Ti5 EtherCAT 模板：
 
 ## 后续方向
 
-- CANopen CiA402 / EtherCAT CoE CiA402 真实通信适配
-- 协议配置文件上传、校验和自动检测
+- CANopen CiA402 / EtherCAT CoE CiA402 真实通信适配增强
+- TwinCAT PLC 工程模板自动化生成
 - UART 舵机私有协议适配
 - 多测试模式：速度响应、电流限制、温升、重复定位
 - SQLite 历史记录
