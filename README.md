@@ -24,6 +24,16 @@ python -m pip install -e .
 python -m jointbench
 ```
 
+可选通信依赖：
+
+```powershell
+# CANopen CiA402
+python -m pip install -e ".[can]"
+
+# EtherCAT CoE CiA402
+python -m pip install -e ".[ethercat]"
+```
+
 启动后：
 
 1. 点击 `Connect` 连接 Mock 执行器。
@@ -38,7 +48,26 @@ python -m jointbench
 ```powershell
 python -m pytest
 python -m jointbench --smoke-test
+python -m jointbench --protocol-dialog-smoke-test
 ```
+
+## V1 CiA402 配置入口
+
+主界面左侧点击 `Protocol Setup` 可以打开通信配置窗口，支持：
+
+- Mock
+- CANopen CiA402
+- EtherCAT CoE CiA402
+
+仓库内提供了离线 fake 配置，可用于无硬件验证协议配置、扫描和状态机流程：
+
+- `configs/buses/canopen_fake.yaml`
+- `configs/buses/ethercat_fake.yaml`
+- `configs/devices/sample_cia402_joint.yaml`
+- `configs/safety/default_joint_limits.yaml`
+- `configs/tests/position_step_5deg.yaml`
+
+真实设备接入前必须提供安全限位和单位换算配置；配置不完整时平台会阻止真实设备运动。
 
 ## 输出文件
 

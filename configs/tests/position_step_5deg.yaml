@@ -1,0 +1,13 @@
+test:
+  type: position_step_response
+  start_position_deg: 0
+  target_position_deg: 5
+  duration_s: 3
+  sample_rate_hz: 100
+
+pass_fail:
+  max_overshoot_pct: 10
+  max_settling_time_s: 1.0
+  max_steady_state_error_deg: 0.5
+  max_peak_current_a: 8
+  max_temperature_c: 75

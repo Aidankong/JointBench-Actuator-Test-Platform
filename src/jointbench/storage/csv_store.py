@@ -19,6 +19,9 @@ FIELDNAMES = [
     "fault_code",
     "enabled",
     "control_mode",
+    "protocol",
+    "statusword",
+    "controlword",
 ]
 
 

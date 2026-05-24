@@ -1,0 +1,7 @@
+protocol: ethercat_coe_cia402
+
+ethercat:
+  interface: fake
+  slave_index: 0
+  cycle_time_ms: 1
+  distributed_clock: false

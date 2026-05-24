@@ -1,0 +1,9 @@
+protocol: canopen_cia402
+
+can:
+  interface: fake
+  channel: fake
+  bitrate: 1000000
+  node_id: 1
+  heartbeat_timeout_ms: 500
+  sdo_timeout_ms: 300

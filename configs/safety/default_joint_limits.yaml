@@ -1,0 +1,12 @@
+limits:
+  min_position_deg: -90
+  max_position_deg: 90
+  max_speed_dps: 360
+  max_current_a: 8
+  max_temperature_c: 75
+  max_following_error_deg: 5
+  communication_timeout_ms: 500
+
+safe_stop:
+  strategy: quick_stop
+  disable_after_stop: true

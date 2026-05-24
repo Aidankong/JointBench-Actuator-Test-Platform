@@ -94,6 +94,9 @@ def run_position_step_test(
         output_dir=output_dir,
         failure_reasons=failure_reasons,
         aborted=aborted,
+        config_files=getattr(adapter, "config_files", {}),
+        config_hashes=getattr(adapter, "config_hashes", {}),
+        operation_enabled=getattr(adapter, "operation_enabled", None),
     )
     build_reports(result)
     return result

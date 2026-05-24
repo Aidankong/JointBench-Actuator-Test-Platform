@@ -1,0 +1,33 @@
+device:
+  name: Sample CiA402 Joint
+  vendor_id: 0x00000001
+  product_code: 0x00004001
+  revision_number: 0x00010000
+  serial_number: 1
+
+cia402:
+  controlword: "0x6040:00"
+  statusword: "0x6041:00"
+  mode_of_operation: "0x6060:00"
+  mode_display: "0x6061:00"
+  target_position: "0x607A:00"
+  actual_position: "0x6064:00"
+  target_velocity: "0x60FF:00"
+  actual_velocity: "0x606C:00"
+  target_torque: "0x6071:00"
+  actual_torque: "0x6077:00"
+  error_code: "0x603F:00"
+
+control:
+  preferred_mode: profile_position
+  homing_required: false
+  fault_reset_on_connect: false
+
+scaling:
+  encoder_counts_per_rev: 524288
+  gear_ratio: 9.0
+  position_direction: 1
+  zero_offset_deg: 0.0
+  velocity_unit: counts_per_second
+  current_scale_a_per_unit: 0.001
+  temperature_scale_c_per_unit: 0.1

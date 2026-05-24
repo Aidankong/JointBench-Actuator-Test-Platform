@@ -9,9 +9,9 @@ from PySide6.QtCore import QObject, QThread, Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QColor, QDesktopServices, QPalette
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QDoubleSpinBox,
     QFormLayout,
-    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -29,7 +29,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from jointbench.comm import MockActuatorAdapter
+from jointbench.app.protocol_setup_dialog import ProtocolSetupDialog
+from jointbench.comm import create_adapter
+from jointbench.comm.base_adapter import BaseAdapter
+from jointbench.config import ProtocolConfigBundle, ProtocolType, default_mock_bundle
 from jointbench.models import ActuatorState, TestConfig, TestResult
 from jointbench.test_cases import run_position_step_test
 
@@ -40,7 +43,7 @@ class StepTestWorker(QObject):
     error = Signal(str)
     log = Signal(str)
 
-    def __init__(self, adapter: MockActuatorAdapter, config: TestConfig, reports_root: Path) -> None:
+    def __init__(self, adapter: BaseAdapter, config: TestConfig, reports_root: Path) -> None:
         super().__init__()
         self._adapter = adapter
         self._config = config
@@ -74,11 +77,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("JointBench Actuator Test Platform")
         self.resize(1360, 820)
-        self.adapter = MockActuatorAdapter()
+        self.protocol_bundle: ProtocolConfigBundle = default_mock_bundle()
+        self.adapter = create_adapter(self.protocol_bundle)
         self.reports_root = Path.cwd() / "reports"
         self.last_result: TestResult | None = None
         self._thread: QThread | None = None
         self._worker: StepTestWorker | None = None
+        self._real_test_confirmed = False
         self._reset_buffers()
         self._build_ui()
         self._apply_style()
@@ -129,11 +134,14 @@ class MainWindow(QMainWindow):
         self.device_label = QLabel("Device: not connected")
         self.firmware_label = QLabel("Firmware: -")
         self.connect_button = QPushButton("Connect")
+        self.protocol_setup_button = QPushButton("Protocol Setup")
         self.connect_button.clicked.connect(self._connect_device)
+        self.protocol_setup_button.clicked.connect(self._open_protocol_setup)
         connection_layout.addWidget(self.adapter_label)
         connection_layout.addWidget(self.device_label)
         connection_layout.addWidget(self.firmware_label)
         connection_layout.addWidget(self.connect_button)
+        connection_layout.addWidget(self.protocol_setup_button)
 
         config_box = QGroupBox("Position Step Test")
         config_layout = QFormLayout(config_box)
@@ -232,11 +240,30 @@ class MainWindow(QMainWindow):
             if not self.adapter.is_connected():
                 self.adapter.connect()
             info = self.adapter.read_device_info()
+            self.adapter_label.setText(f"Adapter: {info.adapter_type}")
             self.device_label.setText(f"Device: {info.device_id}")
             self.firmware_label.setText(f"Firmware: {info.firmware_version}")
             self._log(f"Connected to {info.device_id} via {info.adapter_type}.")
         except Exception as exc:
             QMessageBox.critical(self, "Connection Failed", str(exc))
+
+    def _open_protocol_setup(self) -> None:
+        dialog = ProtocolSetupDialog(self.protocol_bundle, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._apply_protocol_bundle(dialog.bundle)
+
+    def _apply_protocol_bundle(self, bundle: ProtocolConfigBundle) -> None:
+        if self.adapter.is_connected():
+            self.adapter.disconnect()
+        self.protocol_bundle = bundle
+        self.adapter = create_adapter(bundle)
+        self._real_test_confirmed = False
+        protocol_name = bundle.protocol.value
+        self.adapter_label.setText(f"Adapter: {protocol_name}")
+        self.device_label.setText("Device: not connected")
+        self.firmware_label.setText("Firmware: -")
+        self._apply_test_config(bundle.test_config)
+        self._log(f"Protocol configuration applied: {protocol_name}.")
 
     def _start_test(self) -> None:
         if self._thread and self._thread.isRunning():
@@ -252,6 +279,9 @@ class MainWindow(QMainWindow):
         self.result_label.style().polish(self.result_label)
 
         config = self._read_config()
+        if self.protocol_bundle.protocol is not ProtocolType.MOCK and not self._confirm_real_device_start(config):
+            self.result_label.setText("IDLE")
+            return
         self._set_running(True)
         self._thread = QThread(self)
         self._worker = StepTestWorker(self.adapter, config, self.reports_root)
@@ -288,6 +318,39 @@ class MainWindow(QMainWindow):
             max_current_a=self.max_current_spin.value(),
             max_temperature_c=self.max_temp_spin.value(),
         )
+
+    def _apply_test_config(self, config: TestConfig) -> None:
+        self.target_spin.setValue(config.target_position_deg)
+        self.duration_spin.setValue(config.duration_s)
+        self.sample_rate_spin.setValue(int(config.sample_rate_hz))
+        self.max_overshoot_spin.setValue(config.max_overshoot_pct)
+        self.max_settling_spin.setValue(config.max_settling_time_s)
+        self.max_error_spin.setValue(config.max_steady_state_error_deg)
+        self.max_current_spin.setValue(config.max_current_a)
+        self.max_temp_spin.setValue(config.max_temperature_c)
+
+    def _confirm_real_device_start(self, config: TestConfig) -> bool:
+        if self._real_test_confirmed:
+            return True
+        safety = self.protocol_bundle.safety
+        message = (
+            "You are about to command a real CiA402 device.\n\n"
+            f"Protocol: {self.protocol_bundle.protocol.value}\n"
+            f"Target: {config.target_position_deg:.2f} deg\n"
+            f"Position limits: {safety.min_position_deg if safety else 'N/A'} to {safety.max_position_deg if safety else 'N/A'} deg\n"
+            f"Max current: {config.max_current_a:.2f} A\n"
+            f"Max temperature: {config.max_temperature_c:.1f} C\n\n"
+            "Confirm that the actuator is unloaded or in a safe fixture and emergency stop is available."
+        )
+        answer = QMessageBox.warning(
+            self,
+            "Real Device Safety Confirmation",
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        self._real_test_confirmed = answer == QMessageBox.StandardButton.Yes
+        return self._real_test_confirmed
 
     @Slot(object)
     def _on_sample(self, state: ActuatorState) -> None:
@@ -340,6 +403,7 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
         self.open_report_button.setEnabled(not running)
+        self.protocol_setup_button.setEnabled(not running)
         for widget in (
             self.target_spin,
             self.duration_spin,
@@ -412,10 +476,17 @@ def _double_spin(minimum: float, maximum: float, value: float, suffix: str) -> Q
 def run_app(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="JointBench Actuator Test Platform")
     parser.add_argument("--smoke-test", action="store_true", help="Create the GUI once and exit.")
+    parser.add_argument("--protocol-dialog-smoke-test", action="store_true", help="Create the protocol setup dialog once and exit.")
     args = parser.parse_args(argv)
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window = MainWindow()
+    if args.protocol_dialog_smoke_test:
+        dialog = ProtocolSetupDialog(window.protocol_bundle, window)
+        app.processEvents()
+        dialog.close()
+        window.close()
+        return 0
     if args.smoke_test:
         app.processEvents()
         window.close()

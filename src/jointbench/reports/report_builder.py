@@ -20,7 +20,10 @@ MD_TEMPLATE = Template(
 - Device: {{ result.device_info.device_id }}
 - SN: {{ result.device_info.sn }}
 - Adapter: {{ result.device_info.adapter_type }}
+- Protocol: {{ result.device_info.protocol }}
+- Transport: {{ result.device_info.transport_mode }}
 - Firmware: {{ result.device_info.firmware_version }}
+- Operation Enabled: {{ result.operation_enabled if result.operation_enabled is not none else "N/A" }}
 
 ## Test Configuration
 
@@ -60,6 +63,18 @@ MD_TEMPLATE = Template(
 - Raw data: `{{ result.raw_data_path.name }}`
 - Markdown report: `{{ result.report_md_path.name }}`
 - HTML report: `{{ result.report_html_path.name }}`
+
+## Configuration Files
+
+{% if result.config_files -%}
+| Type | Path | SHA256 |
+|---|---|---|
+{% for key, path in result.config_files.items() -%}
+| {{ key }} | `{{ path }}` | `{{ result.config_hashes.get(key, "N/A") }}` |
+{% endfor -%}
+{% else -%}
+- None
+{% endif %}
 """
 )
 
@@ -93,7 +108,10 @@ HTML_TEMPLATE = Template(
     <tr><th>Device</th><td>{{ result.device_info.device_id }}</td></tr>
     <tr><th>SN</th><td>{{ result.device_info.sn }}</td></tr>
     <tr><th>Adapter</th><td>{{ result.device_info.adapter_type }}</td></tr>
+    <tr><th>Protocol</th><td>{{ result.device_info.protocol }}</td></tr>
+    <tr><th>Transport</th><td>{{ result.device_info.transport_mode }}</td></tr>
     <tr><th>Firmware</th><td>{{ result.device_info.firmware_version }}</td></tr>
+    <tr><th>Operation Enabled</th><td>{{ result.operation_enabled if result.operation_enabled is not none else "N/A" }}</td></tr>
   </table>
 
   <h2>Metrics</h2>
@@ -123,6 +141,18 @@ HTML_TEMPLATE = Template(
     <li><a href="{{ result.raw_data_path.name }}">Raw CSV data</a></li>
     <li><a href="{{ result.report_md_path.name }}">Markdown report</a></li>
   </ul>
+
+  <h2>Configuration Files</h2>
+  {% if result.config_files %}
+  <table>
+    <tr><th>Type</th><th>Path</th><th>SHA256</th></tr>
+    {% for key, path in result.config_files.items() -%}
+    <tr><td>{{ key }}</td><td><code>{{ path }}</code></td><td><code>{{ result.config_hashes.get(key, "N/A") }}</code></td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p>None</p>
+  {% endif %}
 </main>
 </body>
 </html>

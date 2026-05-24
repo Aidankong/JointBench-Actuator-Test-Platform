@@ -11,6 +11,13 @@ class DeviceInfo:
     firmware_version: str
     adapter_type: str
     hardware_version: str = "Mock-HW-1.0"
+    protocol: str = "mock"
+    vendor_id: int | None = None
+    product_code: int | None = None
+    revision_number: int | None = None
+    node_id: int | None = None
+    slave_index: int | None = None
+    transport_mode: str = "Mock"
 
 
 @dataclass
@@ -25,6 +32,9 @@ class ActuatorState:
     fault_code: int = 0
     enabled: bool = True
     control_mode: str = "position"
+    protocol: str = "mock"
+    statusword: int | None = None
+    controlword: int | None = None
 
     def to_row(self, test_id: str, sample_index: int) -> dict[str, object]:
         row = asdict(self)
@@ -81,6 +91,9 @@ class TestResult:
     output_dir: Path
     failure_reasons: list[str] = field(default_factory=list)
     aborted: bool = False
+    config_files: dict[str, str] = field(default_factory=dict)
+    config_hashes: dict[str, str] = field(default_factory=dict)
+    operation_enabled: bool | None = None
 
     def metric_rows(self) -> list[tuple[str, str]]:
         values = self.metrics.to_dict()

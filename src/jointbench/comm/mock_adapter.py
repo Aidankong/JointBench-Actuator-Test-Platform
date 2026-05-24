@@ -52,6 +52,8 @@ class MockActuatorAdapter(BaseAdapter):
             sn="SN-MOCK-20260524-001",
             firmware_version="mock-fw-v0.1",
             adapter_type="Mock",
+            protocol="mock",
+            transport_mode="Mock",
         )
 
     def set_enable(self, enabled: bool) -> None:
@@ -119,6 +121,7 @@ class MockActuatorAdapter(BaseAdapter):
             fault_code=self._fault_code,
             enabled=self._enabled,
             control_mode=self._control_mode,
+            protocol="mock",
         )
 
     def _require_connected(self) -> None:
