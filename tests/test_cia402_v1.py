@@ -81,6 +81,7 @@ def test_fake_canopen_adapter_runs_position_step(tmp_path):
     assert result.device_info.transport_mode == "CANopen SDO polling"
     assert result.operation_enabled is True
     assert result.config_hashes
+    assert result.final_statusword is not None
 
 
 def test_factory_rejects_invalid_bundle():

@@ -112,7 +112,7 @@ def _load_file_artifact(
 
 def _parse_bus(data: dict[str, Any], protocol_override: ProtocolType | str | None) -> BusConfig:
     protocol_value = protocol_override or data.get("protocol", ProtocolType.MOCK.value)
-    protocol = ProtocolType(str(protocol_value))
+    protocol = protocol_value if isinstance(protocol_value, ProtocolType) else ProtocolType(str(protocol_value))
     can_data = data.get("can", {}) or {}
     ethercat_data = data.get("ethercat", {}) or {}
     if protocol is ProtocolType.CANOPEN_CIA402:

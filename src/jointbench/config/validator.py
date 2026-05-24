@@ -25,6 +25,8 @@ def validate_bundle(bundle: ProtocolConfigBundle) -> ValidationReport:
             issues.append(ValidationIssue("error", "EtherCAT slave_index is required."))
         if bundle.bus.cycle_time_ms is None:
             issues.append(ValidationIssue("error", "EtherCAT cycle_time_ms is required."))
+        if "esi" not in bundle.artifacts:
+            issues.append(ValidationIssue("warning", "ESI XML is not loaded; PDO validation will be unavailable."))
 
     if bundle.safety is None:
         issues.append(ValidationIssue("error", "Safety config is required for real bus protocols."))

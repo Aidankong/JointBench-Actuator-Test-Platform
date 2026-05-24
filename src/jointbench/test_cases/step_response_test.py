@@ -97,6 +97,8 @@ def run_position_step_test(
         config_files=getattr(adapter, "config_files", {}),
         config_hashes=getattr(adapter, "config_hashes", {}),
         operation_enabled=getattr(adapter, "operation_enabled", None),
+        final_statusword=samples[-1].statusword if samples else None,
+        final_error_code=samples[-1].fault_code if samples else None,
     )
     build_reports(result)
     return result

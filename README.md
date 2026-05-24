@@ -34,6 +34,16 @@ python -m pip install -e ".[can]"
 python -m pip install -e ".[ethercat]"
 ```
 
+Windows 离线产线打包：
+
+```powershell
+python -m pip install -e .
+.\scripts\build_windows.ps1
+.\scripts\smoke_packaged_app.ps1
+```
+
+打包产物建议命名为 `JointBench-v0.2.0-win64.zip`，用于 GitHub Release 或离线拷贝到产线电脑。
+
 启动后：
 
 1. 点击 `Connect` 连接 Mock 执行器。
@@ -68,6 +78,17 @@ python -m jointbench --protocol-dialog-smoke-test
 - `configs/tests/position_step_5deg.yaml`
 
 真实设备接入前必须提供安全限位和单位换算配置；配置不完整时平台会阻止真实设备运动。
+
+Ti5 EtherCAT 模板：
+
+- `configs/buses/ethercat_ti5_template.yaml`
+- `configs/devices/ti5_cia402_template.yaml`
+- `configs/safety/ti5_safe_limits_template.yaml`
+- `configs/tests/ti5_position_step_5deg.yaml`
+
+离线部署说明：
+
+- [Windows Offline Deployment](./docs/Windows_Offline_Deployment.md)
 
 ## 输出文件
 

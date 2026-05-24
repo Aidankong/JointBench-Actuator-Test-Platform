@@ -94,6 +94,8 @@ class TestResult:
     config_files: dict[str, str] = field(default_factory=dict)
     config_hashes: dict[str, str] = field(default_factory=dict)
     operation_enabled: bool | None = None
+    final_statusword: int | None = None
+    final_error_code: int | None = None
 
     def metric_rows(self) -> list[tuple[str, str]]:
         values = self.metrics.to_dict()

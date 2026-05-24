@@ -24,6 +24,13 @@ MD_TEMPLATE = Template(
 - Transport: {{ result.device_info.transport_mode }}
 - Firmware: {{ result.device_info.firmware_version }}
 - Operation Enabled: {{ result.operation_enabled if result.operation_enabled is not none else "N/A" }}
+- Node ID: {{ result.device_info.node_id if result.device_info.node_id is not none else "N/A" }}
+- Slave Index: {{ result.device_info.slave_index if result.device_info.slave_index is not none else "N/A" }}
+- Vendor ID: {{ "0x%08X"|format(result.device_info.vendor_id) if result.device_info.vendor_id is not none else "N/A" }}
+- Product Code: {{ "0x%08X"|format(result.device_info.product_code) if result.device_info.product_code is not none else "N/A" }}
+- Revision: {{ "0x%08X"|format(result.device_info.revision_number) if result.device_info.revision_number is not none else "N/A" }}
+- Final Statusword: {{ "0x%04X"|format(result.final_statusword) if result.final_statusword is not none else "N/A" }}
+- Final Error Code: {{ "0x%04X"|format(result.final_error_code) if result.final_error_code is not none else "N/A" }}
 
 ## Test Configuration
 
@@ -112,6 +119,13 @@ HTML_TEMPLATE = Template(
     <tr><th>Transport</th><td>{{ result.device_info.transport_mode }}</td></tr>
     <tr><th>Firmware</th><td>{{ result.device_info.firmware_version }}</td></tr>
     <tr><th>Operation Enabled</th><td>{{ result.operation_enabled if result.operation_enabled is not none else "N/A" }}</td></tr>
+    <tr><th>Node ID</th><td>{{ result.device_info.node_id if result.device_info.node_id is not none else "N/A" }}</td></tr>
+    <tr><th>Slave Index</th><td>{{ result.device_info.slave_index if result.device_info.slave_index is not none else "N/A" }}</td></tr>
+    <tr><th>Vendor ID</th><td>{{ "0x%08X"|format(result.device_info.vendor_id) if result.device_info.vendor_id is not none else "N/A" }}</td></tr>
+    <tr><th>Product Code</th><td>{{ "0x%08X"|format(result.device_info.product_code) if result.device_info.product_code is not none else "N/A" }}</td></tr>
+    <tr><th>Revision</th><td>{{ "0x%08X"|format(result.device_info.revision_number) if result.device_info.revision_number is not none else "N/A" }}</td></tr>
+    <tr><th>Final Statusword</th><td>{{ "0x%04X"|format(result.final_statusword) if result.final_statusword is not none else "N/A" }}</td></tr>
+    <tr><th>Final Error Code</th><td>{{ "0x%04X"|format(result.final_error_code) if result.final_error_code is not none else "N/A" }}</td></tr>
   </table>
 
   <h2>Metrics</h2>

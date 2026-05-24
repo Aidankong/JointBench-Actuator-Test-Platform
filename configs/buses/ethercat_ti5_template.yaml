@@ -1,0 +1,13 @@
+protocol: ethercat_coe_cia402
+
+ethercat:
+  # Replace with the dedicated EtherCAT NIC name on the production PC.
+  # Keep this NIC isolated from the office network.
+  interface: "Ethernet 2"
+  slave_index: 0
+  cycle_time_ms: 1
+  distributed_clock: false
+
+esi:
+  # Select the Ti5 ESI XML from Protocol Setup at deployment time.
+  file: ""

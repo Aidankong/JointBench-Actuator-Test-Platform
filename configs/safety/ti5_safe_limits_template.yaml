@@ -1,0 +1,13 @@
+limits:
+  # Conservative commissioning limits. Adjust after fixture and actuator review.
+  min_position_deg: -5
+  max_position_deg: 5
+  max_speed_dps: 30
+  max_current_a: 3
+  max_temperature_c: 60
+  max_following_error_deg: 2
+  communication_timeout_ms: 500
+
+safe_stop:
+  strategy: quick_stop
+  disable_after_stop: true

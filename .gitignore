@@ -18,6 +18,7 @@ dist/
 
 # Local app data
 /reports/
+/release/
 /data/
 /logs/
 *.db
