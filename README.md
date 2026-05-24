@@ -65,10 +65,13 @@ python -m jointbench --smoke-test
 ## 产品设计报告
 
 - [JointBench Product Design Report](./JointBench_Product_Design_Report.md)
+- [V1 CiA402 Communication Upgrade Plan](./docs/V1_CiA402_Communication_Upgrade_Plan.md)
 
 ## 后续方向
 
-- UART / CAN 真实通信适配
+- CANopen CiA402 / EtherCAT CoE CiA402 真实通信适配
+- 协议配置文件上传、校验和自动检测
+- UART 舵机私有协议适配
 - 多测试模式：速度响应、电流限制、温升、重复定位
 - SQLite 历史记录
 - 批量报告导出
