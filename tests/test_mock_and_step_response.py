@@ -59,3 +59,6 @@ def test_reports_include_result_and_device(tmp_path):
     assert f"**{result.result}**" in md
     assert result.test_id in html
     assert result.result in html
+    assert result.events_log_path.exists()
+    assert result.config_snapshot_path.exists()
+    assert "Event log" in html

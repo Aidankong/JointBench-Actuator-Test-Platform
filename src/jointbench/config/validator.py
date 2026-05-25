@@ -40,9 +40,12 @@ def validate_bundle(bundle: ProtocolConfigBundle) -> ValidationReport:
             "bStart",
             "bStop",
             "fTargetPositionDeg",
+            "nCommandSequence",
             "bOperationEnabled",
+            "bWatchdogOk",
             "fActualPositionDeg",
             "fActualVelocityDps",
+            "fFollowingErrorDeg",
             "fCurrentA",
             "fTemperatureC",
         ]

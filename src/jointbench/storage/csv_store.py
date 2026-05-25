@@ -22,6 +22,9 @@ FIELDNAMES = [
     "protocol",
     "statusword",
     "controlword",
+    "command_sequence",
+    "watchdog_ok",
+    "following_error_deg",
 ]
 
 

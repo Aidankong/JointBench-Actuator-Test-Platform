@@ -229,6 +229,9 @@ def _parse_test_config(data: dict[str, Any], safety: SafetyLimits | None) -> Tes
         max_temperature_c=float(
             pass_fail.get("max_temperature_c", safety.max_temperature_c if safety and safety.max_temperature_c else 70.0)
         ),
+        max_following_error_deg=float(
+            pass_fail.get("max_following_error_deg", safety.max_following_error_deg if safety and safety.max_following_error_deg else 5.0)
+        ),
         max_overshoot_pct=float(pass_fail.get("max_overshoot_pct", 10.0)),
         max_settling_time_s=float(pass_fail.get("max_settling_time_s", 0.6)),
         max_steady_state_error_deg=float(pass_fail.get("max_steady_state_error_deg", 0.5)),

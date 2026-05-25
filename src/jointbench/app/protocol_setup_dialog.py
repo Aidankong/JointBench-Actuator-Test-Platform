@@ -31,6 +31,7 @@ from jointbench.config import (
     validate_bundle,
 )
 from jointbench.exceptions import JointBenchError
+from jointbench.twincat import DEFAULT_TWINCAT_ESI_DIR, install_esi_file, read_esi_summary
 
 
 class ProtocolSetupDialog(QDialog):
@@ -76,16 +77,19 @@ class ProtocolSetupDialog(QDialog):
         self.load_button = QPushButton("Load")
         self.validate_button = QPushButton("Validate")
         self.scan_button = QPushButton("Scan")
+        self.install_esi_button = QPushButton("Install ESI")
         self.apply_button = QPushButton("Apply")
         self.close_button = QPushButton("Close")
         self.load_button.clicked.connect(self._load_bundle)
         self.validate_button.clicked.connect(self._validate_bundle)
         self.scan_button.clicked.connect(self._scan)
+        self.install_esi_button.clicked.connect(self._install_esi)
         self.apply_button.clicked.connect(self.accept)
         self.close_button.clicked.connect(self.reject)
         actions.addWidget(self.load_button)
         actions.addWidget(self.validate_button)
         actions.addWidget(self.scan_button)
+        actions.addWidget(self.install_esi_button)
         actions.addStretch(1)
         actions.addWidget(self.apply_button)
         actions.addWidget(self.close_button)
@@ -175,6 +179,40 @@ class ProtocolSetupDialog(QDialog):
                     self.scan_table.setItem(row, col, item)
         except (JointBenchError, ValueError) as exc:
             QMessageBox.critical(self, "Scan Failed", str(exc))
+
+    def _install_esi(self) -> None:
+        try:
+            esi_path = self._path("esi")
+            if not esi_path:
+                path, _ = QFileDialog.getOpenFileName(
+                    self,
+                    "Select EtherCAT ESI XML",
+                    str(Path.cwd()),
+                    "EtherCAT ESI XML (*.xml);;All Files (*)",
+                )
+                if not path:
+                    return
+                esi_path = path
+                self.path_fields["esi"].setText(path)
+
+            summary = read_esi_summary(esi_path)
+            installed_path = install_esi_file(esi_path)
+            QMessageBox.information(
+                self,
+                "ESI Installed",
+                (
+                    f"Installed {summary.label()}.\n\n"
+                    f"Source: {esi_path}\n"
+                    f"Target: {installed_path}\n\n"
+                    "Restart TwinCAT XAE or reload EtherCAT device descriptions before scanning."
+                ),
+            )
+        except (JointBenchError, OSError, ValueError) as exc:
+            QMessageBox.critical(
+                self,
+                "Install ESI Failed",
+                f"{exc}\n\nDefault TwinCAT ESI directory: {DEFAULT_TWINCAT_ESI_DIR}",
+            )
 
     def _render_validation(self) -> None:
         lines = self.validation_report.summary_lines()

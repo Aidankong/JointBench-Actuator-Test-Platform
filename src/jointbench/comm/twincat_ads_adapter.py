@@ -23,6 +23,7 @@ class TwinCATAdsAdapter(BaseAdapter):
         self._enabled = False
         self._target_position_deg = bundle.test_config.start_position_deg
         self._operation_enabled: bool | None = None
+        self._command_sequence = 0
 
     @property
     def config_files(self) -> dict[str, str]:
@@ -49,6 +50,7 @@ class TwinCATAdsAdapter(BaseAdapter):
     def connect(self) -> None:
         self.backend.connect()
         self._connected = True
+        self._bump_command_sequence()
 
     def disconnect(self) -> None:
         self.backend.disconnect()
@@ -80,6 +82,7 @@ class TwinCATAdsAdapter(BaseAdapter):
     def set_enable(self, enabled: bool) -> None:
         if enabled and self.bundle.safety is None:
             raise ConfigurationError("Safety limits are required before enabling a TwinCAT ADS axis.")
+        self._bump_command_sequence()
         self._write("bEnable", bool(enabled))
         if enabled:
             self._wait_for("bOperationEnabled", True, timeout_s=self.bundle.bus.timeout_ms / 1000.0)
@@ -97,6 +100,7 @@ class TwinCATAdsAdapter(BaseAdapter):
         self._check_position_command(position_deg)
         self._target_position_deg = position_deg
         self._write("fTargetPositionDeg", float(position_deg))
+        self._bump_command_sequence()
         self._write("bStart", False)
         self._write("bStart", True)
 
@@ -104,12 +108,14 @@ class TwinCATAdsAdapter(BaseAdapter):
         return self._state(timestamp_s)
 
     def step(self, dt_s: float, timestamp_s: float) -> ActuatorState:
+        self._bump_command_sequence()
         cycle = getattr(self.backend, "cycle", None)
         if callable(cycle):
             cycle(dt_s)
         return self._state(timestamp_s)
 
     def emergency_stop(self) -> None:
+        self._bump_command_sequence()
         self._write("bStop", True)
         self._write("bEnable", False)
         self._enabled = False
@@ -130,6 +136,9 @@ class TwinCATAdsAdapter(BaseAdapter):
             protocol=ProtocolType.TWINCAT_ADS.value,
             statusword=int(self._read("nStatusword") or 0),
             controlword=int(self._read("nControlword") or 0),
+            command_sequence=int(self._read("nCommandSequence") or self._command_sequence),
+            watchdog_ok=bool(self._read("bWatchdogOk")),
+            following_error_deg=float(self._read("fFollowingErrorDeg") or 0.0),
         )
 
     def _read(self, key: str):
@@ -141,10 +150,15 @@ class TwinCATAdsAdapter(BaseAdapter):
     def _wait_for(self, key: str, expected: object, timeout_s: float) -> None:
         deadline = time.perf_counter() + timeout_s
         while time.perf_counter() < deadline:
+            self._bump_command_sequence()
             if self._read(key) == expected:
                 return
             time.sleep(0.02)
         raise CommunicationTimeout(f"Timed out waiting for {key}={expected}.")
+
+    def _bump_command_sequence(self) -> None:
+        self._command_sequence += 1
+        self._write("nCommandSequence", self._command_sequence)
 
     def _check_position_command(self, position_deg: float) -> None:
         safety = self.bundle.safety

@@ -72,6 +72,10 @@ def test_fake_ads_scan_enable_start_stop_fault_path(tmp_path):
     assert state.enabled
     assert state.protocol == "twincat_ads"
     assert state.statusword == 0x0027
+    assert state.watchdog_ok is True
+    assert state.command_sequence is not None
+    assert state.command_sequence >= 1
+    assert state.following_error_deg is not None
     adapter.emergency_stop()
     stopped = adapter.read_state(0.02)
     assert not stopped.enabled
@@ -82,6 +86,28 @@ def test_fake_ads_scan_enable_start_stop_fault_path(tmp_path):
     assert result.device_info.ams_net_id == "127.0.0.1.1.1"
     assert result.device_info.ads_symbol_prefix == "MAIN.stJointBench"
     assert result.operation_enabled is True
+    assert result.final_watchdog_ok is True
+    assert result.final_command_sequence is not None
+    assert result.events_log_path.exists()
+    assert result.config_snapshot_path.exists()
+    assert "Position command sent" in result.events_log_path.read_text(encoding="utf-8")
+    assert "twincat_ads" in result.config_snapshot_path.read_text(encoding="utf-8")
+
+
+def test_ads_command_sequence_is_written_to_backend():
+    bundle = _ads_bundle()
+    adapter = create_adapter(bundle)
+    adapter.connect()
+    adapter.set_enable(True)
+    adapter.send_position_command(1.0)
+    before_step = int(adapter.backend.read("MAIN.stJointBench.nCommandSequence"))
+    state = adapter.step(0.01, 0.01)
+    after_step = int(adapter.backend.read("MAIN.stJointBench.nCommandSequence"))
+
+    assert before_step > 0
+    assert after_step > before_step
+    assert state.command_sequence == after_step
+    assert adapter.backend.read("MAIN.stJointBench.bWatchdogOk") is True
 
 
 def test_twincat_ads_missing_ams_net_id_blocks_motion():
@@ -109,6 +135,27 @@ def test_twincat_backend_uses_pyads_connection(monkeypatch):
     bundle = replace(_ads_bundle(), bus=replace(_ads_bundle().bus, host="127.0.0.1"))
     calls: list[tuple[str, object]] = []
     symbols = {
+        "MAIN.stJointBench.bEnable": False,
+        "MAIN.stJointBench.bStart": False,
+        "MAIN.stJointBench.bStop": False,
+        "MAIN.stJointBench.bResetFault": False,
+        "MAIN.stJointBench.fTargetPositionDeg": 0.0,
+        "MAIN.stJointBench.nCommandSequence": 0,
+        "MAIN.stJointBench.bReady": False,
+        "MAIN.stJointBench.bBusy": False,
+        "MAIN.stJointBench.bDone": False,
+        "MAIN.stJointBench.bError": False,
+        "MAIN.stJointBench.bOperationEnabled": False,
+        "MAIN.stJointBench.bWatchdogOk": False,
+        "MAIN.stJointBench.fActualPositionDeg": 0.0,
+        "MAIN.stJointBench.fActualVelocityDps": 0.0,
+        "MAIN.stJointBench.fFollowingErrorDeg": 0.0,
+        "MAIN.stJointBench.fCurrentA": 0.0,
+        "MAIN.stJointBench.fTemperatureC": 25.0,
+        "MAIN.stJointBench.nStatusword": 0,
+        "MAIN.stJointBench.nControlword": 0,
+        "MAIN.stJointBench.nFaultCode": 0,
+        "MAIN.stJointBench.nErrorCode": 0,
         "MAIN.stJointBench.sDeviceName": "Ti5 PLC",
         "MAIN.stJointBench.nVendorId": 123,
         "MAIN.stJointBench.nProductCode": 456,

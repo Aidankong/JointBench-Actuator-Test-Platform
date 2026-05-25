@@ -40,6 +40,9 @@ class ActuatorState:
     protocol: str = "mock"
     statusword: int | None = None
     controlword: int | None = None
+    command_sequence: int | None = None
+    watchdog_ok: bool | None = None
+    following_error_deg: float | None = None
 
     def to_row(self, test_id: str, sample_index: int) -> dict[str, object]:
         row = asdict(self)
@@ -58,6 +61,7 @@ class TestConfig:
     max_position_abs_deg: float = 120.0
     max_current_a: float = 5.0
     max_temperature_c: float = 70.0
+    max_following_error_deg: float = 5.0
     max_overshoot_pct: float = 10.0
     max_settling_time_s: float = 0.6
     max_steady_state_error_deg: float = 0.5
@@ -93,6 +97,8 @@ class TestResult:
     raw_data_path: Path
     report_md_path: Path
     report_html_path: Path
+    events_log_path: Path
+    config_snapshot_path: Path
     output_dir: Path
     failure_reasons: list[str] = field(default_factory=list)
     aborted: bool = False
@@ -100,7 +106,11 @@ class TestResult:
     config_hashes: dict[str, str] = field(default_factory=dict)
     operation_enabled: bool | None = None
     final_statusword: int | None = None
+    final_controlword: int | None = None
     final_error_code: int | None = None
+    final_command_sequence: int | None = None
+    final_watchdog_ok: bool | None = None
+    final_following_error_deg: float | None = None
 
     def metric_rows(self) -> list[tuple[str, str]]:
         values = self.metrics.to_dict()

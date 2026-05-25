@@ -59,14 +59,15 @@ Copy the entire `dist/JointBench` folder to the production PC.
    - `configs/buses/twincat_ads_local.yaml`
    - `configs/devices/ti5_twincat_ads_template.yaml`
    - `configs/safety/ti5_safe_limits_template.yaml`
-   - `configs/tests/ti5_ads_position_step_5deg.yaml`
+   - `configs/tests/ti5_ads_position_step_1deg.yaml` for first motion, then `configs/tests/ti5_ads_position_step_5deg.yaml`
 8. Click `Validate`, then `Scan`.
-9. Confirm metadata, safety limits, fixture state, and emergency stop before starting the first 5 deg test.
+9. Confirm metadata, safety limits, fixture state, emergency stop, `bOperationEnabled`, and `bWatchdogOk` before starting the first 1 deg test.
 
 ## Offline Notes
 
 - The production PC does not need Python.
 - `reports/` is created automatically on first run.
+- Each test folder contains `raw_data.csv`, `events.log`, `config_snapshot.yaml`, `report.md`, and `report.html`.
 - Use the ADS-enabled build when controlling through TwinCAT.
 - `pyads` uses Beckhoff `TcAdsDll.dll` on Windows. If PyInstaller reports that this DLL was not found on the build PC, the ADS-enabled app can still run on a production PC where TwinCAT XAR/XAE is installed and the DLL is available through TwinCAT.
 - Keep the loaded YAML files under version control or release control for traceability.

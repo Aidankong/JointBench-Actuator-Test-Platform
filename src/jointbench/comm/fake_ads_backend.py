@@ -15,6 +15,7 @@ class FakeAdsBackend:
         self._velocity = 0.0
         self._temperature = 31.0
         self._current = 0.1
+        self._command_sequence = 0
         self._init_symbols()
 
     def connect(self) -> None:
@@ -28,7 +29,10 @@ class FakeAdsBackend:
 
     def write(self, symbol: str, value: object) -> None:
         self.symbols[symbol] = value
-        if symbol.endswith(".bEnable"):
+        if symbol.endswith(".nCommandSequence"):
+            self._command_sequence = int(value)
+            self.symbols[self._name("bWatchdogOk")] = self._command_sequence > 0
+        elif symbol.endswith(".bEnable"):
             self.symbols[self._name("bOperationEnabled")] = bool(value)
             self.symbols[self._name("bReady")] = bool(value)
         elif symbol.endswith(".bStop") and value:
@@ -70,8 +74,10 @@ class FakeAdsBackend:
                 self.symbols[self._name("bBusy")] = False
                 self.symbols[self._name("bDone")] = True
 
+        following_error = self._target_position - self._position
         self.symbols[self._name("fActualPositionDeg")] = self._position
         self.symbols[self._name("fActualVelocityDps")] = self._velocity
+        self.symbols[self._name("fFollowingErrorDeg")] = following_error
         self.symbols[self._name("fCurrentA")] = self._current
         self.symbols[self._name("fTemperatureC")] = self._temperature
         self.symbols[self._name("nStatusword")] = 0x0027 if self.read(self._name("bOperationEnabled")) else 0x0040
@@ -83,13 +89,16 @@ class FakeAdsBackend:
             "bStop": False,
             "bResetFault": False,
             "fTargetPositionDeg": self._target_position,
+            "nCommandSequence": self._command_sequence,
             "bReady": False,
             "bBusy": False,
             "bDone": False,
             "bError": False,
             "bOperationEnabled": False,
+            "bWatchdogOk": False,
             "fActualPositionDeg": self._position,
             "fActualVelocityDps": 0.0,
+            "fFollowingErrorDeg": 0.0,
             "fCurrentA": self._current,
             "fTemperatureC": self._temperature,
             "nStatusword": 0x0040,

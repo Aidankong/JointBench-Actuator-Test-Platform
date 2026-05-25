@@ -10,12 +10,20 @@ VAR
         nProductCode := 0,
         nRevision := 0
     );
+    (* Link these placeholder structures to the Ti5 EtherCAT PDOs after scanning the slave.
+       Keep MAIN.stJointBench as the ADS surface consumed by JointBench. *)
+    stTi5In AT %I* : ST_Ti5CiA402PdoInput;
+    stTi5Out AT %Q* : ST_Ti5CiA402PdoOutput;
     fbJointBenchAxis : FB_JointBenchAxis;
 END_VAR
 ]]></Declaration>
     <Implementation>
       <ST><![CDATA[
-fbJointBenchAxis(stIf := stJointBench);
+fbJointBenchAxis(
+    stIf := stJointBench,
+    stDriveIn := stTi5In,
+    stDriveOut := stTi5Out
+);
 ]]></ST>
     </Implementation>
   </POU>

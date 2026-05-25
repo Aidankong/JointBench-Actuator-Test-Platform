@@ -100,6 +100,7 @@ Ti5 TwinCAT ADS 产线模板：
 - `configs/buses/twincat_ads_local.yaml`
 - `configs/devices/ti5_twincat_ads_template.yaml`
 - `configs/safety/ti5_safe_limits_template.yaml`
+- `configs/tests/ti5_ads_position_step_1deg.yaml`
 - `configs/tests/ti5_ads_position_step_5deg.yaml`
 
 产线推荐路线：
@@ -129,6 +130,8 @@ JointBench -> pysoem direct EtherCAT -> Ti5
 - `raw_data.csv`
 - `report.md`
 - `report.html`
+- `events.log`
+- `config_snapshot.yaml`
 
 其中 `reports/` 默认不纳入 Git 跟踪，适合保存本地测试结果。
 
@@ -143,6 +146,16 @@ JointBench -> pysoem direct EtherCAT -> Ti5
 - average_current_a：平均电流
 - max_temperature_c：最高温度
 - jitter_deg：稳态抖动
+
+## Ti5 首次上机顺序
+
+真实 Ti5 / TwinCAT ADS 首次上机按三阶段执行：
+
+1. Stage A：只执行 `Protocol Setup -> Validate -> Scan` 和使能状态检查，不下发运动。
+2. Stage B：加载 `ti5_ads_position_step_1deg.yaml`，执行 1 deg 小幅阶跃。
+3. Stage C：加载 `ti5_ads_position_step_5deg.yaml`，执行 5 deg 验收阶跃。
+
+真实工位的 AMS Net ID、Ti5 identity、编码器/减速比、方向、零偏和治具限位建议复制到 `data/stations/ti5_ads/` 下维护；`data/` 默认不纳入 Git 跟踪。
 
 ## 产品设计报告
 

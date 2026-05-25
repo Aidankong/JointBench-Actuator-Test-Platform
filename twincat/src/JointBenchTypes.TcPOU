@@ -9,15 +9,18 @@ STRUCT
     bStop : BOOL;
     bResetFault : BOOL;
     fTargetPositionDeg : LREAL;
+    nCommandSequence : DINT;
 
     bReady : BOOL;
     bBusy : BOOL;
     bDone : BOOL;
     bError : BOOL;
     bOperationEnabled : BOOL;
+    bWatchdogOk : BOOL;
 
     fActualPositionDeg : LREAL;
     fActualVelocityDps : LREAL;
+    fFollowingErrorDeg : LREAL;
     fCurrentA : LREAL;
     fTemperatureC : LREAL;
 
@@ -30,6 +33,25 @@ STRUCT
     nVendorId : DINT;
     nProductCode : DINT;
     nRevision : DINT;
+END_STRUCT
+END_TYPE
+
+TYPE ST_Ti5CiA402PdoInput :
+STRUCT
+    nStatusword : UINT;
+    nActualPosition : DINT;
+    nActualVelocity : DINT;
+    nActualTorqueOrCurrent : INT;
+    nErrorCode : UINT;
+    nTemperatureRaw : INT;
+END_STRUCT
+END_TYPE
+
+TYPE ST_Ti5CiA402PdoOutput :
+STRUCT
+    nControlword : UINT;
+    nModeOfOperation : SINT;
+    nTargetPosition : DINT;
 END_STRUCT
 END_TYPE
 ]]></Declaration>

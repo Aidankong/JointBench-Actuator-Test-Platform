@@ -5,71 +5,171 @@
 FUNCTION_BLOCK FB_JointBenchAxis
 VAR_IN_OUT
     stIf : ST_JointBenchAds;
+    stDriveIn : ST_Ti5CiA402PdoInput;
+    stDriveOut : ST_Ti5CiA402PdoOutput;
 END_VAR
 VAR_INPUT
     fMinPositionDeg : LREAL := -6.0;
     fMaxPositionDeg : LREAL := 6.0;
+    fMaxVelocityDps : LREAL := 30.0;
+    fMaxCurrentA : LREAL := 3.0;
+    fMaxTemperatureC : LREAL := 60.0;
+    fMaxFollowingErrorDeg : LREAL := 2.0;
+    nEncoderCountsPerRev : DINT := 524288;
+    fGearRatio : LREAL := 1.0;
+    nPositionDirection : DINT := 1;
+    fZeroOffsetDeg : LREAL := 0.0;
+    fCurrentScaleAPerUnit : LREAL := 1.0;
+    fTemperatureScaleCPerUnit : LREAL := 1.0;
+    tWatchdogTimeout : TIME := T#500MS;
 END_VAR
 VAR
     bStartEdge : R_TRIG;
+    fbWatchdog : TON;
+    nLastCommandSequence : DINT := -1;
+    bCommandUpdated : BOOL;
+    bOperationEnabled : BOOL;
+    bFault : BOOL;
+    bScalingValid : BOOL;
+    fCountsPerDeg : LREAL;
+    fActualPositionDeg : LREAL;
+    fTargetCounts : LREAL;
+    fVelocityDps : LREAL;
+    bTargetValid : BOOL;
 END_VAR
 ]]></Declaration>
     <Implementation>
       <ST><![CDATA[
-(* Template logic only.
-   Replace the simulated assignments with Ti5 EtherCAT axis function blocks,
-   PDO variables, CiA402 state handling, and local safety interlocks. *)
+(* Ti5 CiA402 ADS bridge.
+   Link stDriveIn/stDriveOut to the scanned Ti5 EtherCAT PDOs in TwinCAT.
+   JointBench owns the ADS command surface; TwinCAT owns realtime safety and EtherCAT. *)
 
 bStartEdge(CLK := stIf.bStart);
+bCommandUpdated := stIf.nCommandSequence <> nLastCommandSequence;
+IF bCommandUpdated THEN
+    nLastCommandSequence := stIf.nCommandSequence;
+END_IF
 
-IF stIf.bStop THEN
-    stIf.bBusy := FALSE;
-    stIf.bDone := FALSE;
-    stIf.bOperationEnabled := FALSE;
-    stIf.nControlword := 2; (* quick stop placeholder *)
+fbWatchdog(IN := stIf.bEnable AND NOT bCommandUpdated, PT := tWatchdogTimeout);
+stIf.bWatchdogOk := NOT fbWatchdog.Q;
+
+bScalingValid := (nEncoderCountsPerRev > 0) AND (fGearRatio > 0.0) AND ((nPositionDirection = 1) OR (nPositionDirection = -1));
+IF bScalingValid THEN
+    fCountsPerDeg := DINT_TO_LREAL(nEncoderCountsPerRev) * fGearRatio / 360.0;
+ELSE
+    fCountsPerDeg := 1.0;
+    stIf.bError := TRUE;
+    stIf.nErrorCode := 16#7101;
+END_IF
+
+fActualPositionDeg := (DINT_TO_LREAL(stDriveIn.nActualPosition) / fCountsPerDeg) * DINT_TO_LREAL(nPositionDirection) + fZeroOffsetDeg;
+fVelocityDps := (DINT_TO_LREAL(stDriveIn.nActualVelocity) / fCountsPerDeg) * DINT_TO_LREAL(nPositionDirection);
+
+stIf.fActualPositionDeg := fActualPositionDeg;
+stIf.fActualVelocityDps := fVelocityDps;
+stIf.fFollowingErrorDeg := stIf.fTargetPositionDeg - fActualPositionDeg;
+stIf.fCurrentA := INT_TO_LREAL(stDriveIn.nActualTorqueOrCurrent) * fCurrentScaleAPerUnit;
+stIf.fTemperatureC := INT_TO_LREAL(stDriveIn.nTemperatureRaw) * fTemperatureScaleCPerUnit;
+stIf.nStatusword := UINT_TO_DINT(stDriveIn.nStatusword);
+stIf.nControlword := UINT_TO_DINT(stDriveOut.nControlword);
+stIf.nFaultCode := UINT_TO_DINT(stDriveIn.nErrorCode);
+
+bOperationEnabled := (stDriveIn.nStatusword AND 16#006F) = 16#0027;
+bFault := (stDriveIn.nStatusword AND 16#0008) <> 0;
+stIf.bOperationEnabled := bOperationEnabled;
+stIf.bReady := stIf.bWatchdogOk AND stIf.bEnable AND NOT stIf.bError AND NOT bFault;
+
+IF bFault THEN
+    stIf.bError := TRUE;
+    stIf.nErrorCode := UINT_TO_DINT(stDriveIn.nErrorCode);
+END_IF
+
+IF (fActualPositionDeg < fMinPositionDeg) OR (fActualPositionDeg > fMaxPositionDeg) THEN
+    stIf.bError := TRUE;
+    stIf.nErrorCode := 16#7003;
+END_IF
+
+IF ABS(fVelocityDps) > fMaxVelocityDps THEN
+    stIf.bError := TRUE;
+    stIf.nErrorCode := 16#7004;
+END_IF
+
+IF stIf.fCurrentA > fMaxCurrentA THEN
+    stIf.bError := TRUE;
+    stIf.nErrorCode := 16#7005;
+END_IF
+
+IF stIf.fTemperatureC > fMaxTemperatureC THEN
+    stIf.bError := TRUE;
+    stIf.nErrorCode := 16#7006;
+END_IF
+
+IF NOT stIf.bWatchdogOk THEN
+    stIf.bError := TRUE;
+    stIf.nErrorCode := 16#7002;
 END_IF
 
 IF stIf.bResetFault THEN
+    stDriveOut.nControlword := 16#0080;
     stIf.bError := FALSE;
+    stIf.bBusy := FALSE;
+    stIf.bDone := FALSE;
     stIf.nErrorCode := 0;
-    stIf.nFaultCode := 0;
+ELSIF stIf.bStop THEN
+    stDriveOut.nControlword := 16#0002;
+    stIf.bBusy := FALSE;
+    stIf.bDone := FALSE;
+ELSIF stIf.bError THEN
+    stDriveOut.nControlword := 16#0002;
+    stIf.bBusy := FALSE;
+ELSIF stIf.bEnable THEN
+    stDriveOut.nModeOfOperation := 1; (* Profile Position Mode *)
+    CASE (stDriveIn.nStatusword AND 16#006F) OF
+        16#0040:
+            stDriveOut.nControlword := 16#0006; (* shutdown *)
+        16#0021:
+            stDriveOut.nControlword := 16#0007; (* switch on *)
+        16#0023:
+            stDriveOut.nControlword := 16#000F; (* enable operation *)
+        16#0027:
+            stDriveOut.nControlword := 16#000F;
+        ELSE
+            stDriveOut.nControlword := 16#0006;
+    END_CASE
+ELSE
+    stDriveOut.nControlword := 16#0000; (* disable voltage *)
+    stIf.bBusy := FALSE;
+    stIf.bDone := FALSE;
 END_IF
 
-IF stIf.bEnable AND NOT stIf.bError THEN
-    stIf.bReady := TRUE;
-    stIf.bOperationEnabled := TRUE;
-    stIf.nStatusword := 39; (* 0x0027 operation enabled placeholder *)
-ELSIF NOT stIf.bEnable THEN
-    stIf.bReady := FALSE;
-    stIf.bOperationEnabled := FALSE;
-    stIf.nStatusword := 64; (* 0x0040 switch on disabled placeholder *)
-END_IF
-
-IF bStartEdge.Q AND stIf.bOperationEnabled THEN
-    IF (stIf.fTargetPositionDeg < fMinPositionDeg) OR (stIf.fTargetPositionDeg > fMaxPositionDeg) THEN
+IF bStartEdge.Q AND bOperationEnabled AND stIf.bReady THEN
+    bTargetValid := (stIf.fTargetPositionDeg >= fMinPositionDeg) AND (stIf.fTargetPositionDeg <= fMaxPositionDeg);
+    IF NOT bTargetValid THEN
         stIf.bError := TRUE;
         stIf.nErrorCode := 16#7001;
+        stDriveOut.nControlword := 16#0002;
     ELSE
+        fTargetCounts := (stIf.fTargetPositionDeg - fZeroOffsetDeg) * fCountsPerDeg * DINT_TO_LREAL(nPositionDirection);
+        stDriveOut.nTargetPosition := LREAL_TO_DINT(fTargetCounts);
         stIf.bBusy := TRUE;
         stIf.bDone := FALSE;
-        stIf.nControlword := 15; (* 0x000F enable operation placeholder *)
     END_IF
 END_IF
 
-(* Simulated following behavior for template validation only. *)
-IF stIf.bBusy AND NOT stIf.bError THEN
-    stIf.fActualVelocityDps := (stIf.fTargetPositionDeg - stIf.fActualPositionDeg) * 20.0;
-    stIf.fActualPositionDeg := stIf.fActualPositionDeg + stIf.fActualVelocityDps * 0.001;
-    IF ABS(stIf.fTargetPositionDeg - stIf.fActualPositionDeg) < 0.05 THEN
-        stIf.fActualVelocityDps := 0.0;
-        stIf.fActualPositionDeg := stIf.fTargetPositionDeg;
+IF stIf.bBusy THEN
+    IF (ABS(stIf.fFollowingErrorDeg) < 0.05) AND (ABS(fVelocityDps) < 1.0) THEN
         stIf.bBusy := FALSE;
         stIf.bDone := TRUE;
     END_IF
 END_IF
 
-stIf.fCurrentA := 0.2;
-stIf.fTemperatureC := 31.0;
+IF stIf.bDone AND (ABS(stIf.fFollowingErrorDeg) > fMaxFollowingErrorDeg) THEN
+    stIf.bError := TRUE;
+    stIf.nErrorCode := 16#7007;
+    stDriveOut.nControlword := 16#0002;
+END_IF
+
+stIf.nControlword := UINT_TO_DINT(stDriveOut.nControlword);
 ]]></ST>
     </Implementation>
   </POU>

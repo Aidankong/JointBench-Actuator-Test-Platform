@@ -58,6 +58,7 @@ class TwinCATAdsBackend:
         if close_after_scan:
             self.connect()
         try:
+            self._probe_required_symbols()
             return [
                 ScanResult(
                     protocol=ProtocolType.TWINCAT_ADS,
@@ -78,6 +79,10 @@ class TwinCATAdsBackend:
 
     def _name(self, key: str) -> str:
         return self.bundle.device.ads_symbols.get(key, f"{self.bundle.device.ads_symbol_prefix}.{key}")
+
+    def _probe_required_symbols(self) -> None:
+        for key in SYMBOL_TYPES:
+            self.read(self._name(key))
 
     def _ensure_connected(self) -> None:
         if not self.connected or self.connection is None:

@@ -29,12 +29,16 @@ MD_TEMPLATE = Template(
 - ADS Symbol Prefix: {{ result.device_info.ads_symbol_prefix if result.device_info.ads_symbol_prefix else "N/A" }}
 - TwinCAT Route Status: {{ result.device_info.twincat_route_status if result.device_info.twincat_route_status else "N/A" }}
 - Operation Enabled: {{ result.operation_enabled if result.operation_enabled is not none else "N/A" }}
+- Final Watchdog OK: {{ result.final_watchdog_ok if result.final_watchdog_ok is not none else "N/A" }}
+- Final Command Sequence: {{ result.final_command_sequence if result.final_command_sequence is not none else "N/A" }}
+- Final Following Error: {{ "%.4g deg"|format(result.final_following_error_deg) if result.final_following_error_deg is not none else "N/A" }}
 - Node ID: {{ result.device_info.node_id if result.device_info.node_id is not none else "N/A" }}
 - Slave Index: {{ result.device_info.slave_index if result.device_info.slave_index is not none else "N/A" }}
 - Vendor ID: {{ "0x%08X"|format(result.device_info.vendor_id) if result.device_info.vendor_id is not none else "N/A" }}
 - Product Code: {{ "0x%08X"|format(result.device_info.product_code) if result.device_info.product_code is not none else "N/A" }}
 - Revision: {{ "0x%08X"|format(result.device_info.revision_number) if result.device_info.revision_number is not none else "N/A" }}
 - Final Statusword: {{ "0x%04X"|format(result.final_statusword) if result.final_statusword is not none else "N/A" }}
+- Final Controlword: {{ "0x%04X"|format(result.final_controlword) if result.final_controlword is not none else "N/A" }}
 - Final Error Code: {{ "0x%04X"|format(result.final_error_code) if result.final_error_code is not none else "N/A" }}
 
 ## Test Configuration
@@ -51,6 +55,7 @@ MD_TEMPLATE = Template(
 | Max Steady-State Error | {{ config.max_steady_state_error_deg }} deg |
 | Max Current | {{ config.max_current_a }} A |
 | Max Temperature | {{ config.max_temperature_c }} C |
+| Max Following Error | {{ config.max_following_error_deg }} deg |
 
 ## Metrics
 
@@ -75,6 +80,8 @@ MD_TEMPLATE = Template(
 - Raw data: `{{ result.raw_data_path.name }}`
 - Markdown report: `{{ result.report_md_path.name }}`
 - HTML report: `{{ result.report_html_path.name }}`
+- Event log: `{{ result.events_log_path.name }}`
+- Configuration snapshot: `{{ result.config_snapshot_path.name }}`
 
 ## Configuration Files
 
@@ -129,12 +136,16 @@ HTML_TEMPLATE = Template(
     <tr><th>ADS Symbol Prefix</th><td>{{ result.device_info.ads_symbol_prefix if result.device_info.ads_symbol_prefix else "N/A" }}</td></tr>
     <tr><th>TwinCAT Route Status</th><td>{{ result.device_info.twincat_route_status if result.device_info.twincat_route_status else "N/A" }}</td></tr>
     <tr><th>Operation Enabled</th><td>{{ result.operation_enabled if result.operation_enabled is not none else "N/A" }}</td></tr>
+    <tr><th>Final Watchdog OK</th><td>{{ result.final_watchdog_ok if result.final_watchdog_ok is not none else "N/A" }}</td></tr>
+    <tr><th>Final Command Sequence</th><td>{{ result.final_command_sequence if result.final_command_sequence is not none else "N/A" }}</td></tr>
+    <tr><th>Final Following Error</th><td>{{ "%.4g deg"|format(result.final_following_error_deg) if result.final_following_error_deg is not none else "N/A" }}</td></tr>
     <tr><th>Node ID</th><td>{{ result.device_info.node_id if result.device_info.node_id is not none else "N/A" }}</td></tr>
     <tr><th>Slave Index</th><td>{{ result.device_info.slave_index if result.device_info.slave_index is not none else "N/A" }}</td></tr>
     <tr><th>Vendor ID</th><td>{{ "0x%08X"|format(result.device_info.vendor_id) if result.device_info.vendor_id is not none else "N/A" }}</td></tr>
     <tr><th>Product Code</th><td>{{ "0x%08X"|format(result.device_info.product_code) if result.device_info.product_code is not none else "N/A" }}</td></tr>
     <tr><th>Revision</th><td>{{ "0x%08X"|format(result.device_info.revision_number) if result.device_info.revision_number is not none else "N/A" }}</td></tr>
     <tr><th>Final Statusword</th><td>{{ "0x%04X"|format(result.final_statusword) if result.final_statusword is not none else "N/A" }}</td></tr>
+    <tr><th>Final Controlword</th><td>{{ "0x%04X"|format(result.final_controlword) if result.final_controlword is not none else "N/A" }}</td></tr>
     <tr><th>Final Error Code</th><td>{{ "0x%04X"|format(result.final_error_code) if result.final_error_code is not none else "N/A" }}</td></tr>
   </table>
 
@@ -164,6 +175,8 @@ HTML_TEMPLATE = Template(
   <ul>
     <li><a href="{{ result.raw_data_path.name }}">Raw CSV data</a></li>
     <li><a href="{{ result.report_md_path.name }}">Markdown report</a></li>
+    <li><a href="{{ result.events_log_path.name }}">Event log</a></li>
+    <li><a href="{{ result.config_snapshot_path.name }}">Configuration snapshot</a></li>
   </ul>
 
   <h2>Configuration Files</h2>

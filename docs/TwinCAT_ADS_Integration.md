@@ -33,13 +33,16 @@ Required fields:
 | Command | bStop | BOOL |
 | Command | bResetFault | BOOL |
 | Command | fTargetPositionDeg | LREAL |
+| Command | nCommandSequence | DINT |
 | Feedback | bReady | BOOL |
 | Feedback | bBusy | BOOL |
 | Feedback | bDone | BOOL |
 | Feedback | bError | BOOL |
 | Feedback | bOperationEnabled | BOOL |
+| Feedback | bWatchdogOk | BOOL |
 | Telemetry | fActualPositionDeg | LREAL |
 | Telemetry | fActualVelocityDps | LREAL |
+| Telemetry | fFollowingErrorDeg | LREAL |
 | Telemetry | fCurrentA | LREAL |
 | Telemetry | fTemperatureC | LREAL |
 | Diagnostics | nStatusword | DINT |
@@ -52,6 +55,8 @@ Required fields:
 | Metadata | nRevision | DINT |
 
 The YAML device profile can override any symbol path. When not overridden, JointBench builds the path as `<prefix>.<symbol>`.
+
+`nCommandSequence` is written by JointBench during connect, enable, start, stop, and each sampling cycle. The PLC watchdog must quick-stop the axis and publish an error when `bEnable` remains true but this value stops changing longer than the station timeout. `fFollowingErrorDeg` is diagnostic in JointBench reports; realtime following-error safety belongs in the PLC.
 
 ## YAML Example
 
@@ -85,6 +90,7 @@ JointBench blocks real motion when:
 - AMS Net ID is missing.
 - Required ADS symbols cannot be resolved.
 - The requested first target exceeds +/-5 deg.
+- The PLC reports an unhealthy ADS watchdog through `bWatchdogOk = FALSE`.
 
 The PLC must also implement local safety: software limits, quick stop, fault reset policy, and operation-enabled supervision.
 

@@ -10,8 +10,9 @@ Use this checklist for the first Ti5 harmonic joint commissioning run.
 4. Scan EtherCAT devices in TwinCAT and confirm the Ti5 slave appears.
 5. Map PDOs and verify CiA402 statusword, controlword, actual position, and target position.
 6. Add the PLC interface from `twincat/src`.
-7. Confirm `MAIN.stJointBench.*` symbols are visible in the PLC symbol table.
-8. Activate configuration and start TwinCAT in Run mode.
+7. Link `MAIN.stTi5In` / `MAIN.stTi5Out` to the scanned Ti5 CiA402 PDO variables.
+8. Confirm `MAIN.stJointBench.*` symbols are visible in the PLC symbol table.
+9. Activate configuration and start TwinCAT in Run mode.
 
 ## JointBench Preparation
 
@@ -20,6 +21,7 @@ Load these templates in `Protocol Setup`:
 - `configs/buses/twincat_ads_local.yaml`
 - `configs/devices/ti5_twincat_ads_template.yaml`
 - `configs/safety/ti5_safe_limits_template.yaml`
+- `configs/tests/ti5_ads_position_step_1deg.yaml`
 - `configs/tests/ti5_ads_position_step_5deg.yaml`
 
 Edit the templates for the actual station:
@@ -37,9 +39,10 @@ Edit the templates for the actual station:
 2. Use a current-limited power supply.
 3. Confirm physical emergency stop.
 4. Confirm TwinCAT can enable the axis safely.
-5. In JointBench, click `Scan` and confirm PLC metadata.
-6. Start only the 5 deg profile-position test.
-7. Review `raw_data.csv`, `report.md`, and `report.html`.
+5. Stage A: In JointBench, click `Scan` and confirm PLC metadata. Enable only; do not command motion until `bOperationEnabled=True` and `bWatchdogOk=True`.
+6. Stage B: Run the 1 deg profile-position test and review the generated report.
+7. Stage C: Run the 5 deg profile-position test after the 1 deg result is clean.
+8. Review `raw_data.csv`, `events.log`, `config_snapshot.yaml`, `report.md`, and `report.html`.
 
 ## Failure Handling
 
@@ -47,4 +50,5 @@ Edit the templates for the actual station:
 - Symbol read failure: verify PLC symbol names and that symbol download is enabled.
 - Operation enabled timeout: check PLC state machine and Ti5 drive faults.
 - Motion blocked by JointBench: check safety YAML, scaling YAML, and first target limit.
+- Watchdog error: check that JointBench keeps running, ADS writes are succeeding, and `nCommandSequence` changes in the PLC watch window.
 - Drive fault: use TwinCAT diagnostics first, then retry after the PLC exposes a clean fault-reset flow.
