@@ -51,6 +51,28 @@ Expected Ti5 identity:
 
 This scan creates a temporary TwinCAT project and does not activate configuration, enable the drive, or command motion.
 
+## C# Production App Flow
+
+Start the Windows production shell:
+
+```powershell
+cd windows\JointBench.Windows
+dotnet run --project src\JointBench.ProductionApp
+```
+
+The operator flow is:
+
+1. Select `中文` or `English`.
+2. Run `Environment / 环境检查`.
+3. Import the Ti5 ESI XML if needed.
+4. Run `Prepare TwinCAT / 准备 TwinCAT` in engineering mode.
+5. Run `Scan Ti5 / 扫描 Ti5`.
+6. Run ADS symbol check for `MAIN.stJointBench`.
+7. Confirm emergency stop, fixture, and current-limited power.
+8. Click `Start Test / 开始测试`.
+
+The C# native sequence runs Enable-only, then 1deg, then 5deg. The 5deg stage is skipped unless the 1deg stage passes. Reports are generated under `reports/` in the selected UI language.
+
 ## First Motion
 
 1. Use an unloaded axis or a safe fixture.

@@ -83,6 +83,8 @@ Current implementation:
 - Unit tests cover command parsing, ESI parsing/install behavior, helper help output, and required ADS symbol coverage.
 - On this PC, `check-prereqs` passes and `install-esi` successfully installs `Ti5Robot_JointMotor_2.0.xml` into the TwinCAT ESI directory.
 - With the Ti5 connected, `scan-spike` finds the TwinCAT EtherCAT master and one Ti5 slave: vendor `0x00522227`, product `0x00009253`, revision `0x00010005`, physical address `1001`.
+- C# native production sequence primitives are implemented for ADS enable, 1deg, 5deg, command sequence heartbeat, data capture, and report generation.
+- The WPF shell now supports Chinese/English switching, engineering preparation, three-point physical safety confirmation, production sequence start, and report folder opening.
 
 Planned commands:
 
@@ -111,6 +113,17 @@ Planned commands:
   - Done: TwinCAT Automation Interface EtherCAT master and box scan works on this station.
   - Done: Ti5 identity can be read from the scanned box XML.
   - Next: persist or import the scanned configuration into a controlled project template only after engineering approves activation semantics.
+
+- `prepare-twincat --station <dir> [--activate]`
+  - Loads the ignored station config directory.
+  - Runs prerequisite checks and scans the live EtherCAT network.
+  - Verifies the Ti5 slave identity and builds the PDO link plan for `MAIN.stTi5In` / `MAIN.stTi5Out`.
+  - Keeps activation behind an explicit engineering-mode flag.
+
+- `run-sequence --station <dir> --language zh-CN|en-US --confirm-motion`
+  - Runs C# native Enable-only -> 1deg -> 5deg through ADS.
+  - Requires explicit physical safety confirmation for real motion.
+  - Generates CSV, event log, config snapshot, Markdown report, and HTML report.
 
 Deliverable:
 

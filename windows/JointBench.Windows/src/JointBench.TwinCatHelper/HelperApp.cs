@@ -13,9 +13,17 @@ public sealed class HelperApp
     private readonly AdsSymbolValidator adsSymbolValidator;
     private readonly AutomationProbe automationProbe;
     private readonly EtherCatScanProbe etherCatScanProbe;
+    private readonly TwinCatPreparationService preparationService;
 
     public HelperApp(IOutput output)
-        : this(output, new EsiService(), new SystemProbe(), new AdsSymbolValidator(), new AutomationProbe(), new EtherCatScanProbe())
+        : this(
+            output,
+            new EsiService(),
+            new SystemProbe(),
+            new AdsSymbolValidator(),
+            new AutomationProbe(),
+            new EtherCatScanProbe(),
+            new TwinCatPreparationService())
     {
     }
 
@@ -25,7 +33,8 @@ public sealed class HelperApp
         SystemProbe systemProbe,
         AdsSymbolValidator adsSymbolValidator,
         AutomationProbe automationProbe,
-        EtherCatScanProbe etherCatScanProbe)
+        EtherCatScanProbe etherCatScanProbe,
+        TwinCatPreparationService? preparationService = null)
     {
         this.output = output;
         this.esiService = esiService;
@@ -33,6 +42,7 @@ public sealed class HelperApp
         this.adsSymbolValidator = adsSymbolValidator;
         this.automationProbe = automationProbe;
         this.etherCatScanProbe = etherCatScanProbe;
+        this.preparationService = preparationService ?? new TwinCatPreparationService();
     }
 
     public int Run(string[] args)
@@ -50,6 +60,8 @@ public sealed class HelperApp
                 "check-ads-symbols" => RunCheckAdsSymbols(commandLine),
                 "automation-smoke" => RunAutomationSmoke(commandLine),
                 "scan-spike" => RunScanSpike(commandLine),
+                "prepare-twincat" => RunPrepareTwinCat(commandLine),
+                "run-sequence" => RunSequence(commandLine),
                 _ => UnknownCommand(commandLine.Command),
             };
         }
@@ -118,6 +130,40 @@ public sealed class HelperApp
         return result.Ok && result.Ti5Found ? 0 : 2;
     }
 
+    private int RunPrepareTwinCat(CommandLine commandLine)
+    {
+        var result = preparationService.Prepare(new TwinCatPreparationRequest(
+            commandLine.RequireOption("station"),
+            commandLine.HasFlag("activate"),
+            commandLine.Option("prog-id") ?? "TcXaeShell.DTE.15.0"));
+        Write(result, commandLine.HasFlag("json"));
+        return result.Ok ? 0 : 2;
+    }
+
+    private int RunSequence(CommandLine commandLine)
+    {
+        var station = StationConfigLoader.Load(commandLine.RequireOption("station"));
+        var language = ParseLanguage(commandLine.Option("language"));
+        var fake = commandLine.HasFlag("fake");
+        if (!fake && !commandLine.HasFlag("confirm-motion"))
+        {
+            throw new InvalidOperationException("Real motion requires --confirm-motion after physical E-stop, fixture, and current-limited power are confirmed.");
+        }
+
+        using IAdsSymbolClient client = fake ? new FakeAdsSymbolClient() : new BeckhoffAdsSymbolClient();
+        var adapter = new AdsMotionAdapter(client, station.Ads);
+        var runner = new ProductionTestSequenceRunner(adapter, new TestReportWriter());
+        var request = new ProductionSequenceRequest(
+            commandLine.Option("reports") ?? Path.Combine(Environment.CurrentDirectory, "reports"),
+            language,
+            station.Ads,
+            station.Safety,
+            station.Tests);
+        var result = runner.RunAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+        Write(result, commandLine.HasFlag("json"));
+        return result.OverallResult == "PASS" ? 0 : 2;
+    }
+
     private int PrintHelp()
     {
         output.WriteLine(
@@ -132,6 +178,8 @@ public sealed class HelperApp
               check-ads-symbols --ams <ams-net-id> [--port 851] [--prefix MAIN.stJointBench] [--json]
               automation-smoke [--prog-id TcXaeShell.DTE.15.0] [--solution <path>] [--json]
               scan-spike [--prog-id TcXaeShell.DTE.15.0] [--json]
+              prepare-twincat --station <dir> [--activate] [--prog-id TcXaeShell.DTE.15.0] [--json]
+              run-sequence --station <dir> [--language zh-CN|en-US] [--reports <dir>] [--confirm-motion] [--fake] [--json]
             """);
         return 0;
     }
@@ -226,9 +274,39 @@ public sealed class HelperApp
                 }
 
                 break;
+            case TwinCatPreparationReport report:
+                output.WriteLine($"TwinCAT preparation: {(report.Ok ? "OK" : "FAILED")}");
+                output.WriteLine($"Activated: {report.Activated}");
+                output.WriteLine(report.Message);
+                if (report.LinkPlan is not null)
+                {
+                    output.WriteLine($"Ti5: vendor 0x{report.LinkPlan.VendorId:X8}, product 0x{report.LinkPlan.ProductCode:X8}, revision 0x{report.LinkPlan.RevisionNumber:X8}");
+                    foreach (var link in report.LinkPlan.Links)
+                    {
+                        output.WriteLine($"Link: {link.PlcVariablePath} <= {link.EtherCatVariablePath}");
+                    }
+                }
+
+                break;
+            case ProductionSequenceResult result:
+                output.WriteLine($"Production sequence: {result.OverallResult}");
+                output.WriteLine($"Test ID: {result.TestId}");
+                output.WriteLine($"Output: {result.OutputDirectory}");
+                foreach (var stage in result.StageResults)
+                {
+                    output.WriteLine($"[{stage.Result}] {stage.StageName}: {string.Join("; ", stage.FailureReasons)}");
+                }
+
+                break;
             default:
                 output.WriteLine(value.ToString() ?? string.Empty);
                 break;
         }
     }
+
+    private static ReportLanguage ParseLanguage(string? language) =>
+        string.Equals(language, "zh-CN", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(language, "zh", StringComparison.OrdinalIgnoreCase)
+            ? ReportLanguage.SimplifiedChinese
+            : ReportLanguage.English;
 }

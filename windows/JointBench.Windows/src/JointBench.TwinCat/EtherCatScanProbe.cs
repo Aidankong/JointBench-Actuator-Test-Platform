@@ -47,9 +47,14 @@ public sealed class EtherCatScanProbe
 
             foreach (var deviceNode in foundDoc.Descendants().Where(element => element.Name.LocalName == "Device"))
             {
-                masterIndex++;
                 var itemSubType = IntValue(deviceNode, "ItemSubType");
                 var itemSubTypeName = Text(deviceNode, "ItemSubTypeName");
+                if (itemSubType != 111 && !itemSubTypeName.Contains("EtherCAT Master", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                masterIndex++;
                 var pnp = deviceNode.Descendants().FirstOrDefault(element => element.Name.LocalName == "Pnp");
                 var addressInfo = deviceNode.Elements().FirstOrDefault(element => element.Name.LocalName == "AddressInfo")
                     ?? throw new InvalidOperationException("Found EtherCAT device is missing AddressInfo.");
@@ -104,6 +109,18 @@ public sealed class EtherCatScanProbe
                         Text(slave, "EsiFile"),
                         childPath));
                 }
+            }
+
+            if (masters.Count == 0)
+            {
+                return new EtherCatScanReport(
+                    false,
+                    "No EtherCAT master was found. TwinCAT returned other device types only; check the dedicated EtherCAT adapter and Ti5 wiring.",
+                    tempRoot,
+                    foundPath,
+                    masters,
+                    boxes,
+                    false);
             }
 
             return new EtherCatScanReport(

@@ -10,6 +10,8 @@ public sealed class HelperAppTests
 
         Assert.Equal(0, exitCode);
         Assert.Contains("check-prereqs", output.Text);
+        Assert.Contains("prepare-twincat", output.Text);
+        Assert.Contains("run-sequence", output.Text);
     }
 
     private sealed class BufferOutput : IOutput

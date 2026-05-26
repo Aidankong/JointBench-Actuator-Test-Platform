@@ -23,7 +23,10 @@ public sealed record EsiSummary(
 
 public sealed record EsiInstallResult(string SourcePath, string TargetPath, bool DryRun, EsiSummary Summary);
 
-public sealed record AdsConnectionOptions(string AmsNetId, int Port, string SymbolPrefix);
+public sealed record AdsConnectionOptions(string AmsNetId, int Port, string SymbolPrefix)
+{
+    public static AdsConnectionOptions LocalDefault() => new("127.0.0.1.1.1", 851, "MAIN.stJointBench");
+}
 
 public sealed record AdsSymbolSpec(string Name, string ExpectedType);
 

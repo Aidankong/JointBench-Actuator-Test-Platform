@@ -30,6 +30,8 @@ dotnet run --project src\JointBench.TwinCatHelper -- install-esi --file C:\path\
 dotnet run --project src\JointBench.TwinCatHelper -- check-ads-symbols --ams 127.0.0.1.1.1 --port 851 --prefix MAIN.stJointBench
 dotnet run --project src\JointBench.TwinCatHelper -- automation-smoke --prog-id TcXaeShell.DTE.15.0
 dotnet run --project src\JointBench.TwinCatHelper -- scan-spike
+dotnet run --project src\JointBench.TwinCatHelper -- prepare-twincat --station data\stations\ti5_ads
+dotnet run --project src\JointBench.TwinCatHelper -- run-sequence --station data\stations\ti5_ads --language zh-CN --confirm-motion
 ```
 
 ## Current Scope
@@ -39,11 +41,29 @@ dotnet run --project src\JointBench.TwinCatHelper -- scan-spike
 - Validate the public JointBench ADS symbol surface.
 - Validate basic TwinCAT / Visual Studio DTE Automation Interface startup.
 - Scan EtherCAT masters and slave boxes through a temporary TwinCAT project without activating configuration.
+- Build a Ti5 PDO link plan for the scanned slave.
+- Run the C# native enable-only, 1deg, and 5deg ADS sequence after the station is confirmed safe.
+- Generate `raw_data.csv`, `events.log`, `config_snapshot.yaml`, `report.md`, and `report.html` from C#.
+- Switch the WPF production shell between Chinese and English; reports follow the selected language.
 - Provide JSON output for integration and diagnostics.
-- Provide a first WPF station setup surface for preflight, ESI import, automation smoke, and ADS symbol checks.
+- Provide a WPF production surface for preflight, ESI import, engineering preparation, scan, ADS symbol checks, safety confirmation, sequence execution, and report browsing.
+
+## Station Directory
+
+Real station values live under ignored local data, for example `data\stations\ti5_ads`:
+
+```text
+data\stations\ti5_ads\
+  bus.yaml
+  device.yaml
+  safety.yaml
+  tests.yaml
+```
+
+`run-sequence` requires `--confirm-motion` for real ADS motion. Use `--fake` only for offline software verification.
 
 ## Next Scope
 
-- Add an EtherCAT scan spike once the Ti5 slave is physically connected.
-- Add TwinCAT project template open/generate/activate operations.
-- Add enable-only, 1deg, and 5deg ADS workflows after PLC hardware validation.
+- Harden full TwinCAT project generation, PDO linking, activation, and runtime restart on the first engineering station.
+- Validate the real hardware sequence with physical emergency stop, current-limited power, and safe fixture.
+- Add richer trend plots to generated HTML reports.
