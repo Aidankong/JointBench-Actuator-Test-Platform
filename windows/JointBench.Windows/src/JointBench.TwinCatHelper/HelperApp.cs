@@ -12,9 +12,10 @@ public sealed class HelperApp
     private readonly SystemProbe systemProbe;
     private readonly AdsSymbolValidator adsSymbolValidator;
     private readonly AutomationProbe automationProbe;
+    private readonly EtherCatScanProbe etherCatScanProbe;
 
     public HelperApp(IOutput output)
-        : this(output, new EsiService(), new SystemProbe(), new AdsSymbolValidator(), new AutomationProbe())
+        : this(output, new EsiService(), new SystemProbe(), new AdsSymbolValidator(), new AutomationProbe(), new EtherCatScanProbe())
     {
     }
 
@@ -23,13 +24,15 @@ public sealed class HelperApp
         EsiService esiService,
         SystemProbe systemProbe,
         AdsSymbolValidator adsSymbolValidator,
-        AutomationProbe automationProbe)
+        AutomationProbe automationProbe,
+        EtherCatScanProbe etherCatScanProbe)
     {
         this.output = output;
         this.esiService = esiService;
         this.systemProbe = systemProbe;
         this.adsSymbolValidator = adsSymbolValidator;
         this.automationProbe = automationProbe;
+        this.etherCatScanProbe = etherCatScanProbe;
     }
 
     public int Run(string[] args)
@@ -46,6 +49,7 @@ public sealed class HelperApp
                 "install-esi" => RunInstallEsi(commandLine),
                 "check-ads-symbols" => RunCheckAdsSymbols(commandLine),
                 "automation-smoke" => RunAutomationSmoke(commandLine),
+                "scan-spike" => RunScanSpike(commandLine),
                 _ => UnknownCommand(commandLine.Command),
             };
         }
@@ -107,6 +111,13 @@ public sealed class HelperApp
         return result.Ok ? 0 : 2;
     }
 
+    private int RunScanSpike(CommandLine commandLine)
+    {
+        var result = etherCatScanProbe.Scan(commandLine.Option("prog-id") ?? "TcXaeShell.DTE.15.0");
+        Write(result, commandLine.HasFlag("json"));
+        return result.Ok && result.Ti5Found ? 0 : 2;
+    }
+
     private int PrintHelp()
     {
         output.WriteLine(
@@ -120,6 +131,7 @@ public sealed class HelperApp
               install-esi --file <path> [--target-dir <dir>] [--dry-run] [--json]
               check-ads-symbols --ams <ams-net-id> [--port 851] [--prefix MAIN.stJointBench] [--json]
               automation-smoke [--prog-id TcXaeShell.DTE.15.0] [--solution <path>] [--json]
+              scan-spike [--prog-id TcXaeShell.DTE.15.0] [--json]
             """);
         return 0;
     }
@@ -186,6 +198,31 @@ public sealed class HelperApp
                 else
                 {
                     output.WriteLine(result.Error);
+                }
+
+                break;
+            case EtherCatScanReport report:
+                output.WriteLine($"EtherCAT scan spike: {(report.Ok ? "OK" : "FAILED")}");
+                output.WriteLine($"Ti5 found: {report.Ti5Found}");
+                output.WriteLine($"Temp root: {report.TempRoot}");
+                if (!report.Ok)
+                {
+                    output.WriteLine(report.Error);
+                    break;
+                }
+
+                foreach (var master in report.Masters)
+                {
+                    output.WriteLine(
+                        $"Master {master.Index}: {master.ItemSubTypeName} {master.DeviceDescription} {master.DeviceData}");
+                }
+
+                foreach (var box in report.Boxes)
+                {
+                    output.WriteLine(
+                        $"Box {box.MasterIndex}.{box.BoxIndex}: {box.Name}, vendor 0x{box.VendorId:X8}, product 0x{box.ProductCode:X8}, revision 0x{box.RevisionNo:X8}, phys {box.PhysAddr}");
+                    output.WriteLine($"    ESI: {box.EsiFile}");
+                    output.WriteLine($"    XML: {box.XmlPath}");
                 }
 
                 break;

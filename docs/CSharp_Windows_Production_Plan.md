@@ -77,10 +77,12 @@ Current implementation:
 
 - `windows/JointBench.Windows` solution exists.
 - `JointBench.TwinCat` shared library exists for CLI and WPF reuse.
-- `check-prereqs`, `twincat-info`, `esi-summary`, `install-esi`, `check-ads-symbols`, and `automation-smoke` are implemented.
+- `check-prereqs`, `twincat-info`, `esi-summary`, `install-esi`, `check-ads-symbols`, `automation-smoke`, and `scan-spike` are implemented.
+- `scan-spike` uses a temporary TwinCAT project, `ProduceXml(false)` device discovery, and `ScanBoxes` box discovery.
 - The helper targets `net10.0-windows10.0.19041.0`.
 - Unit tests cover command parsing, ESI parsing/install behavior, helper help output, and required ADS symbol coverage.
 - On this PC, `check-prereqs` passes and `install-esi` successfully installs `Ti5Robot_JointMotor_2.0.xml` into the TwinCAT ESI directory.
+- With the Ti5 connected, `scan-spike` finds the TwinCAT EtherCAT master and one Ti5 slave: vendor `0x00522227`, product `0x00009253`, revision `0x00010005`, physical address `1001`.
 
 Planned commands:
 
@@ -106,9 +108,9 @@ Planned commands:
   - Show TwinCAT version, XAE path, TCatSysManager type library availability, DTE ProgIDs, and service status.
 
 - `scan-spike`
-  - Spike TwinCAT Automation Interface EtherCAT scan behavior.
-  - Confirm whether scan can be run headless/reliably on this station.
-  - If full scan automation is blocked by TwinCAT UI constraints, document the exact fallback.
+  - Done: TwinCAT Automation Interface EtherCAT master and box scan works on this station.
+  - Done: Ti5 identity can be read from the scanned box XML.
+  - Next: persist or import the scanned configuration into a controlled project template only after engineering approves activation semantics.
 
 Deliverable:
 
@@ -222,8 +224,8 @@ After cutover:
 5. Done: add fake/local smoke tests that do not require Ti5 hardware.
 6. Done: spike `TcXaeShell.DTE.15.0` / `VisualStudio.DTE.18.0` startup and version discovery.
 7. Done: add first WPF station setup shell backed by shared C# library calls.
-8. Next: spike EtherCAT scan automation once the Ti5 slave is connected.
-9. Next: decide whether project generation and PDO linking are reliable enough for production automation.
+8. Done: spike EtherCAT scan automation with the Ti5 slave connected.
+9. Next: decide whether project generation, activation, and PDO linking are reliable enough for production automation.
 
 ## Open Decisions
 

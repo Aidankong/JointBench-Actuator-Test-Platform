@@ -29,6 +29,7 @@ dotnet run --project src\JointBench.TwinCatHelper -- esi-summary --file C:\path\
 dotnet run --project src\JointBench.TwinCatHelper -- install-esi --file C:\path\to\Ti5Robot_JointMotor_2.0.xml
 dotnet run --project src\JointBench.TwinCatHelper -- check-ads-symbols --ams 127.0.0.1.1.1 --port 851 --prefix MAIN.stJointBench
 dotnet run --project src\JointBench.TwinCatHelper -- automation-smoke --prog-id TcXaeShell.DTE.15.0
+dotnet run --project src\JointBench.TwinCatHelper -- scan-spike
 ```
 
 ## Current Scope
@@ -37,6 +38,7 @@ dotnet run --project src\JointBench.TwinCatHelper -- automation-smoke --prog-id 
 - Validate and install EtherCAT ESI XML files into the TwinCAT ESI directory.
 - Validate the public JointBench ADS symbol surface.
 - Validate basic TwinCAT / Visual Studio DTE Automation Interface startup.
+- Scan EtherCAT masters and slave boxes through a temporary TwinCAT project without activating configuration.
 - Provide JSON output for integration and diagnostics.
 - Provide a first WPF station setup surface for preflight, ESI import, automation smoke, and ADS symbol checks.
 

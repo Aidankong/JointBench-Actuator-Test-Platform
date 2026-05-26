@@ -101,6 +101,7 @@
                             <StackPanel Orientation="Horizontal">
                                 <Button x:Name="RunPreflightButton" Content="Run Preflight" Click="RunPreflightButton_Click" Style="{StaticResource PrimaryButton}" />
                                 <Button x:Name="AutomationSmokeButton" Content="Automation Smoke" Click="AutomationSmokeButton_Click" Style="{StaticResource SecondaryButton}" />
+                                <Button x:Name="ScanSpikeButton" Content="Scan Spike" Click="ScanSpikeButton_Click" Style="{StaticResource SecondaryButton}" />
                             </StackPanel>
                         </StackPanel>
                     </Border>

@@ -10,6 +10,7 @@ public partial class MainWindow : Window
     private readonly SystemProbe systemProbe = new();
     private readonly EsiService esiService = new();
     private readonly AutomationProbe automationProbe = new();
+    private readonly EtherCatScanProbe etherCatScanProbe = new();
     private readonly AdsSymbolValidator adsSymbolValidator = new();
 
     public MainWindow()
@@ -97,6 +98,29 @@ public partial class MainWindow : Window
         foreach (var symbol in report.Symbols)
         {
             WriteOutput($"[{(symbol.Ok ? "ok" : "error")}] {symbol.Name} ({symbol.ExpectedType}): {symbol.Message}");
+        }
+    }
+
+    private void ScanSpikeButton_Click(object sender, RoutedEventArgs e)
+    {
+        var report = etherCatScanProbe.Scan();
+        WriteOutput($"EtherCAT scan spike: {(report.Ok ? "OK" : "FAILED")}");
+        WriteOutput($"Ti5 found: {report.Ti5Found}");
+        WriteOutput($"Temp root: {report.TempRoot}");
+        if (!report.Ok)
+        {
+            WriteOutput(report.Error);
+            return;
+        }
+
+        foreach (var master in report.Masters)
+        {
+            WriteOutput($"Master {master.Index}: {master.ItemSubTypeName} {master.DeviceDescription} {master.DeviceData}");
+        }
+
+        foreach (var box in report.Boxes)
+        {
+            WriteOutput($"Box {box.MasterIndex}.{box.BoxIndex}: {box.Name}, vendor 0x{box.VendorId:X8}, product 0x{box.ProductCode:X8}, revision 0x{box.RevisionNo:X8}");
         }
     }
 

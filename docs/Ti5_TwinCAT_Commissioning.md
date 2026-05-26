@@ -33,6 +33,24 @@ Edit the templates for the actual station:
 - Current and temperature limits
 - Fixture-specific software limits
 
+## C# Windows Helper Scan
+
+With the Ti5 connected, the Windows helper can scan without opening TwinCAT manually:
+
+```powershell
+cd windows\JointBench.Windows
+dotnet run --project src\JointBench.TwinCatHelper -- scan-spike
+```
+
+Expected Ti5 identity:
+
+- Vendor ID: `0x00522227`
+- Product code: `0x00009253`
+- Revision: `0x00010005`
+- Detected name: `Drive 1 (Ti5Robot_JointMotor)`
+
+This scan creates a temporary TwinCAT project and does not activate configuration, enable the drive, or command motion.
+
 ## First Motion
 
 1. Use an unloaded axis or a safe fixture.

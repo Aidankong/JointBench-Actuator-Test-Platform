@@ -43,3 +43,42 @@ public sealed record AutomationSmokeResult(
     string Version,
     string? OpenedSolution,
     string Error);
+
+public sealed record EtherCatMasterInfo(
+    int Index,
+    int ItemSubType,
+    string ItemSubTypeName,
+    string DeviceDescription,
+    string DeviceName,
+    string DeviceData);
+
+public sealed record EtherCatBoxInfo(
+    int MasterIndex,
+    int BoxIndex,
+    string Name,
+    string PathName,
+    int ItemSubType,
+    string ItemSubTypeName,
+    int VendorId,
+    int ProductCode,
+    int RevisionNo,
+    int SerialNo,
+    int PhysAddr,
+    int AutoIncAddr,
+    string EsiFile,
+    string XmlPath)
+{
+    public bool IsTi5 =>
+        VendorId == 0x00522227 &&
+        ProductCode == 0x00009253 &&
+        RevisionNo == 0x00010005;
+}
+
+public sealed record EtherCatScanReport(
+    bool Ok,
+    string Error,
+    string TempRoot,
+    string? FoundDevicesXmlPath,
+    IReadOnlyList<EtherCatMasterInfo> Masters,
+    IReadOnlyList<EtherCatBoxInfo> Boxes,
+    bool Ti5Found);

@@ -9,16 +9,13 @@ public sealed class AutomationProbe
         object? dte = null;
         try
         {
-            var type = Type.GetTypeFromProgID(progId)
-                ?? throw new InvalidOperationException($"COM ProgID is not registered: {progId}");
-            dte = Activator.CreateInstance(type)
-                ?? throw new InvalidOperationException($"Failed to instantiate COM ProgID: {progId}");
+            dte = ComAutomation.Create(progId);
 
-            TrySet(dte, "SuppressUI", true);
-            TrySet(dte, "UserControl", false);
+            ComAutomation.TrySet(dte, "SuppressUI", true);
+            ComAutomation.TrySet(dte, "UserControl", false);
 
-            var name = Convert.ToString(Get(dte, "Name")) ?? string.Empty;
-            var version = Convert.ToString(Get(dte, "Version")) ?? string.Empty;
+            var name = Convert.ToString(ComAutomation.Get(dte, "Name")) ?? string.Empty;
+            var version = Convert.ToString(ComAutomation.Get(dte, "Version")) ?? string.Empty;
             string? openedSolution = null;
 
             if (!string.IsNullOrWhiteSpace(solutionPath))
@@ -28,9 +25,9 @@ public sealed class AutomationProbe
                     throw new FileNotFoundException("Solution file not found.", solutionPath);
                 }
 
-                var solution = Get(dte, "Solution");
-                Invoke(solution, "Open", solutionPath);
-                openedSolution = Convert.ToString(Get(solution, "FullName"));
+                var solution = ComAutomation.Get(dte, "Solution");
+                ComAutomation.Invoke(solution, "Open", solutionPath);
+                openedSolution = Convert.ToString(ComAutomation.Get(solution, "FullName"));
             }
 
             return new AutomationSmokeResult(progId, true, name, version, openedSolution, string.Empty);
@@ -45,8 +42,8 @@ public sealed class AutomationProbe
             {
                 try
                 {
-                    var solution = Get(dte, "Solution");
-                    Invoke(solution, "Close", false);
+                    var solution = ComAutomation.Get(dte, "Solution");
+                    ComAutomation.Invoke(solution, "Close", false);
                 }
                 catch
                 {
@@ -55,7 +52,7 @@ public sealed class AutomationProbe
 
                 try
                 {
-                    Invoke(dte, "Quit");
+                    ComAutomation.Invoke(dte, "Quit");
                 }
                 catch
                 {
@@ -74,50 +71,4 @@ public sealed class AutomationProbe
         }
     }
 
-    private static object? Get(object? target, string propertyName)
-    {
-        if (target is null)
-        {
-            return null;
-        }
-
-        return target.GetType().InvokeMember(
-            propertyName,
-            System.Reflection.BindingFlags.GetProperty,
-            binder: null,
-            target,
-            args: null);
-    }
-
-    private static void TrySet(object target, string propertyName, object value)
-    {
-        try
-        {
-            target.GetType().InvokeMember(
-                propertyName,
-                System.Reflection.BindingFlags.SetProperty,
-                binder: null,
-                target,
-                args: [value]);
-        }
-        catch
-        {
-            // Some DTE hosts expose these properties as read-only in particular startup states.
-        }
-    }
-
-    private static object? Invoke(object? target, string methodName, params object[] args)
-    {
-        if (target is null)
-        {
-            return null;
-        }
-
-        return target.GetType().InvokeMember(
-            methodName,
-            System.Reflection.BindingFlags.InvokeMethod,
-            binder: null,
-            target,
-            args);
-    }
 }
