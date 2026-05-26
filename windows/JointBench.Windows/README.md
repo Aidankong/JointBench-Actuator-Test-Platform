@@ -1,17 +1,24 @@
-# JointBench TwinCAT Helper
+# JointBench Windows
 
-C# helper for Windows production station setup and TwinCAT validation.
+C#/.NET solution for the Windows production station software.
 
-This is the first C# component in the migration path from the Python MVP to a Windows-native production application. It is intentionally small and command-oriented so the future WPF app can call the same operations.
+This is the migration path from the Python MVP to a Windows-native production application. The shared `JointBench.TwinCat` library is used by both the command-line helper and the WPF production shell.
 
 ## Build
 
 ```powershell
-cd tools\JointBench.TwinCatHelper
+cd windows\JointBench.Windows
 dotnet restore
 dotnet build
 dotnet test
 ```
+
+## Projects
+
+- `src\JointBench.TwinCat`: shared TwinCAT, ADS, ESI, and Automation Interface helpers.
+- `src\JointBench.TwinCatHelper`: command-line station setup helper.
+- `src\JointBench.ProductionApp`: WPF production shell.
+- `tests\JointBench.TwinCatHelper.Tests`: local unit tests for helper and shared logic.
 
 ## Commands
 
@@ -30,10 +37,11 @@ dotnet run --project src\JointBench.TwinCatHelper -- automation-smoke --prog-id 
 - Validate and install EtherCAT ESI XML files into the TwinCAT ESI directory.
 - Validate the public JointBench ADS symbol surface.
 - Validate basic TwinCAT / Visual Studio DTE Automation Interface startup.
-- Provide JSON output for future WPF integration.
+- Provide JSON output for integration and diagnostics.
+- Provide a first WPF station setup surface for preflight, ESI import, automation smoke, and ADS symbol checks.
 
 ## Next Scope
 
-- Add a TwinCAT Automation Interface project-open spike.
 - Add an EtherCAT scan spike once the Ti5 slave is physically connected.
-- Add a WPF setup page that calls these helper operations.
+- Add TwinCAT project template open/generate/activate operations.
+- Add enable-only, 1deg, and 5deg ADS workflows after PLC hardware validation.

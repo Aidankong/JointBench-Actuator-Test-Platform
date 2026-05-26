@@ -1,6 +1,6 @@
 using TwinCAT.Ads;
 
-namespace JointBench.TwinCatHelper;
+namespace JointBench.TwinCat;
 
 public sealed class AdsSymbolValidator
 {

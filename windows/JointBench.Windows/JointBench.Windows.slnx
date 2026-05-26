@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/JointBench.ProductionApp/JointBench.ProductionApp.csproj" />
+    <Project Path="src/JointBench.TwinCat/JointBench.TwinCat.csproj" />
     <Project Path="src/JointBench.TwinCatHelper/JointBench.TwinCatHelper.csproj" />
   </Folder>
   <Folder Name="/tests/">

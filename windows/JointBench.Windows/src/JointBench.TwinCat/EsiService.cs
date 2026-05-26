@@ -1,6 +1,6 @@
 using System.Xml.Linq;
 
-namespace JointBench.TwinCatHelper;
+namespace JointBench.TwinCat;
 
 public sealed class EsiService
 {

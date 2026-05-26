@@ -1,3 +1,5 @@
+using JointBench.TwinCat;
+
 namespace JointBench.TwinCatHelper.Tests;
 
 public sealed class EsiServiceTests

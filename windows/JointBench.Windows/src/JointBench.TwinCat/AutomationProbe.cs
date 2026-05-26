@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace JointBench.TwinCatHelper;
+namespace JointBench.TwinCat;
 
 public sealed class AutomationProbe
 {

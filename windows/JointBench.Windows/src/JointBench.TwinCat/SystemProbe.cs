@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.ServiceProcess;
 
-namespace JointBench.TwinCatHelper;
+namespace JointBench.TwinCat;
 
 public sealed class SystemProbe
 {

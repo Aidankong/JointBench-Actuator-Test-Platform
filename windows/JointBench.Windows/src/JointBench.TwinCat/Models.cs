@@ -1,4 +1,4 @@
-namespace JointBench.TwinCatHelper;
+namespace JointBench.TwinCat;
 
 public sealed record CheckItem(string Name, string Status, string Message, string? Detail = null)
 {

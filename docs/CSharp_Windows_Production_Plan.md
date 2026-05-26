@@ -12,7 +12,7 @@ Verified on 2026-05-26:
 - `dotnet msbuild` reports `MSBuild 18.6.3`.
 - `NuGet CLI 7.6.0.59` is installed at `C:\Users\Administrator\.codex-tools\nuget`.
 - `.NET Framework 4.8 targeting pack` is installed.
-- WPF `net10.0-windows` build succeeds.
+- WPF `net10.0-windows10.0.19041.0` build succeeds.
 - `Beckhoff.TwinCAT.Ads 7.0.172` restores and builds in a `net10.0` console app.
 - Local TwinCAT ADS .NET Framework DLL `C:\TwinCAT\AdsApi\.NET\v4.0.30319\TwinCAT.Ads.dll` builds in a `net48` console app.
 - `TcXaeShell.DTE.15.0` COM automation can be instantiated.
@@ -75,7 +75,8 @@ The helper should prove that the upper computer can prepare and verify the TwinC
 
 Current implementation:
 
-- `tools/JointBench.TwinCatHelper` solution exists.
+- `windows/JointBench.Windows` solution exists.
+- `JointBench.TwinCat` shared library exists for CLI and WPF reuse.
 - `check-prereqs`, `twincat-info`, `esi-summary`, `install-esi`, `check-ads-symbols`, and `automation-smoke` are implemented.
 - The helper targets `net10.0-windows10.0.19041.0`.
 - Unit tests cover command parsing, ESI parsing/install behavior, helper help output, and required ADS symbol coverage.
@@ -111,7 +112,7 @@ Planned commands:
 
 Deliverable:
 
-- `tools/JointBench.TwinCatHelper/`
+- `windows/JointBench.Windows/`
 - Unit tests for ESI parsing and prerequisite checks.
 - A documented smoke command sequence.
 
@@ -129,6 +130,13 @@ The WPF app should expose a station setup page with these states:
 - PDO binding check.
 - ADS symbol check.
 - Safety config validation.
+
+Current implementation:
+
+- `JointBench.ProductionApp` WPF shell exists.
+- The first station setup surface calls the shared C# library for environment checks, ESI import, Automation Interface smoke, and ADS symbol validation.
+- Motion controls remain visually locked until the PLC/Ti5 hardware path is validated.
+- On this PC, the WPF app builds and passes a process startup smoke.
 
 Expected operator result:
 
@@ -207,14 +215,15 @@ After cutover:
 
 ## Immediate Sprint
 
-1. Done: add `tools/JointBench.TwinCatHelper` C# solution.
+1. Done: add `windows/JointBench.Windows` C# solution.
 2. Done: implement `check-prereqs`.
 3. Done: port ESI validation/import from Python to C#.
 4. Done: implement ADS symbol validation with `Beckhoff.TwinCAT.Ads`.
 5. Done: add fake/local smoke tests that do not require Ti5 hardware.
 6. Done: spike `TcXaeShell.DTE.15.0` / `VisualStudio.DTE.18.0` startup and version discovery.
-7. Next: spike EtherCAT scan automation once the Ti5 slave is connected.
-8. Next: decide whether project generation and PDO linking are reliable enough for production automation.
+7. Done: add first WPF station setup shell backed by shared C# library calls.
+8. Next: spike EtherCAT scan automation once the Ti5 slave is connected.
+9. Next: decide whether project generation and PDO linking are reliable enough for production automation.
 
 ## Open Decisions
 
