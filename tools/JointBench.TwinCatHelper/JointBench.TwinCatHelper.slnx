@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/JointBench.TwinCatHelper/JointBench.TwinCatHelper.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/JointBench.TwinCatHelper.Tests/JointBench.TwinCatHelper.Tests.csproj" />
+  </Folder>
+</Solution>
