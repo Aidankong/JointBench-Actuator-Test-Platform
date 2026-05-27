@@ -15,6 +15,7 @@ public sealed class HelperApp
     private readonly EtherCatScanProbe etherCatScanProbe;
     private readonly TwinCatPreparationService preparationService;
     private readonly TwinCatProjectProbe projectProbe;
+    private readonly StationReadinessService stationReadinessService;
 
     public HelperApp(IOutput output)
         : this(
@@ -25,7 +26,8 @@ public sealed class HelperApp
             new AutomationProbe(),
             new EtherCatScanProbe(),
             new TwinCatPreparationService(),
-            new TwinCatProjectProbe())
+            new TwinCatProjectProbe(),
+            new StationReadinessService())
     {
     }
 
@@ -37,7 +39,8 @@ public sealed class HelperApp
         AutomationProbe automationProbe,
         EtherCatScanProbe etherCatScanProbe,
         TwinCatPreparationService? preparationService = null,
-        TwinCatProjectProbe? projectProbe = null)
+        TwinCatProjectProbe? projectProbe = null,
+        StationReadinessService? stationReadinessService = null)
     {
         this.output = output;
         this.esiService = esiService;
@@ -47,6 +50,7 @@ public sealed class HelperApp
         this.etherCatScanProbe = etherCatScanProbe;
         this.preparationService = preparationService ?? new TwinCatPreparationService();
         this.projectProbe = projectProbe ?? new TwinCatProjectProbe();
+        this.stationReadinessService = stationReadinessService ?? new StationReadinessService();
     }
 
     public int Run(string[] args)
@@ -64,6 +68,7 @@ public sealed class HelperApp
                 "check-ads-symbols" => RunCheckAdsSymbols(commandLine),
                 "automation-smoke" => RunAutomationSmoke(commandLine),
                 "scan-spike" => RunScanSpike(commandLine),
+                "check-station-ready" => RunCheckStationReady(commandLine),
                 "prepare-twincat" => RunPrepareTwinCat(commandLine),
                 "project-spike" => RunProjectSpike(commandLine),
                 "run-sequence" => RunSequence(commandLine),
@@ -145,6 +150,13 @@ public sealed class HelperApp
         return result.Ok ? 0 : 2;
     }
 
+    private int RunCheckStationReady(CommandLine commandLine)
+    {
+        var result = stationReadinessService.Check(commandLine.RequireOption("station"));
+        Write(result, commandLine.HasFlag("json"));
+        return result.Ready ? 0 : 2;
+    }
+
     private int RunProjectSpike(CommandLine commandLine)
     {
         var result = projectProbe.CreateProjectWithPlcTemplates(
@@ -193,6 +205,7 @@ public sealed class HelperApp
               check-ads-symbols --ams <ams-net-id> [--port 851] [--prefix MAIN.stJointBench] [--json]
               automation-smoke [--prog-id TcXaeShell.DTE.15.0] [--solution <path>] [--json]
               scan-spike [--prog-id TcXaeShell.DTE.15.0] [--json]
+              check-station-ready --station <dir> [--json]
               prepare-twincat --station <dir> [--activate] [--prog-id TcXaeShell.DTE.15.0] [--json]
               project-spike [--repo-root <dir>] [--output <dir>] [--prog-id TcXaeShell.DTE.15.0] [--json]
               run-sequence --station <dir> [--language zh-CN|en-US] [--reports <dir>] [--confirm-motion] [--fake] [--json]
@@ -300,6 +313,27 @@ public sealed class HelperApp
                     foreach (var link in report.LinkPlan.Links)
                     {
                         output.WriteLine($"Link: {link.PlcVariablePath} <= {link.EtherCatVariablePath}");
+                    }
+                }
+
+                break;
+            case StationReadinessReport report:
+                output.WriteLine($"Station readiness: {(report.Ready ? "OK" : "FAILED")}");
+                output.WriteLine(report.Summary);
+                foreach (var check in report.Checks)
+                {
+                    output.WriteLine($"[{check.Status}] {check.Name}: {check.Message}");
+                    if (!string.IsNullOrWhiteSpace(check.Detail))
+                    {
+                        output.WriteLine($"    {check.Detail}");
+                    }
+                }
+
+                if (report.AdsSymbols is { Ok: false } adsSymbols)
+                {
+                    foreach (var symbol in adsSymbols.Symbols.Where(symbol => !symbol.Ok))
+                    {
+                        output.WriteLine($"    ADS {symbol.Name}: {symbol.Message}");
                     }
                 }
 

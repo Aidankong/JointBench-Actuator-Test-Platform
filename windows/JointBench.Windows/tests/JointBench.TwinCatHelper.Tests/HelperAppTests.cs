@@ -10,6 +10,7 @@ public sealed class HelperAppTests
 
         Assert.Equal(0, exitCode);
         Assert.Contains("check-prereqs", output.Text);
+        Assert.Contains("check-station-ready", output.Text);
         Assert.Contains("prepare-twincat", output.Text);
         Assert.Contains("project-spike", output.Text);
         Assert.Contains("run-sequence", output.Text);

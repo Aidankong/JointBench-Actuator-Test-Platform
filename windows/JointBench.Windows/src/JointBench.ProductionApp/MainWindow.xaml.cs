@@ -10,12 +10,12 @@ namespace JointBench.ProductionApp;
 
 public partial class MainWindow : Window
 {
-    private readonly SystemProbe systemProbe = new();
-    private readonly EsiService esiService = new();
     private readonly AutomationProbe automationProbe = new();
     private readonly EtherCatScanProbe etherCatScanProbe = new();
     private readonly AdsSymbolValidator adsSymbolValidator = new();
     private readonly TwinCatPreparationService preparationService = new();
+    private readonly EsiAutoImportService esiAutoImportService = new();
+    private readonly StationReadinessService stationReadinessService = new();
 
     private bool preflightOk;
     private bool ti5Found;
@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Loaded += MainWindow_Loaded;
         ApplyLanguage();
         WriteOutput("JointBench production shell ready.");
     }
@@ -42,6 +43,11 @@ public partial class MainWindow : Window
 
     private bool IsChinese => CurrentLanguage == ReportLanguage.SimplifiedChinese;
 
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        await RunStationReadinessAsync(autoStarted: true);
+    }
+
     private void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!IsLoaded)
@@ -57,24 +63,28 @@ public partial class MainWindow : Window
         TitleText.Text = IsChinese ? "JointBench 产线测试" : "JointBench Production";
         SubtitleText.Text = IsChinese ? "Ti5 TwinCAT ADS 工位" : "Ti5 TwinCAT ADS station";
         WorkflowHeader.Text = IsChinese ? "流程" : "Workflow";
-        Workflow1.Text = IsChinese ? "1  环境检查" : "1  Environment";
+        Workflow1.Text = IsChinese ? "1  工位检查" : "1  Station check";
         Workflow2.Text = IsChinese ? "2  ESI 导入" : "2  ESI import";
         Workflow3.Text = IsChinese ? "3  准备 TwinCAT" : "3  Prepare TwinCAT";
         Workflow4.Text = IsChinese ? "4  扫描 Ti5" : "4  Scan Ti5";
         Workflow5.Text = IsChinese ? "5  ADS 符号" : "5  ADS symbols";
-        Workflow6.Text = IsChinese ? "Enable only" : "Enable only";
+        Workflow6.Text = "Enable only";
         Workflow7.Text = IsChinese ? "1deg 阶跃" : "1deg step";
         Workflow8.Text = IsChinese ? "5deg 验收" : "5deg acceptance";
         ReadinessHeader.Text = IsChinese ? "工位就绪" : "Station Readiness";
         EsiHeader.Text = "ESI";
         TestHeader.Text = IsChinese ? "产线测试" : "Production Test";
         EventHeader.Text = IsChinese ? "事件输出" : "Event Output";
-        RunPreflightButton.Content = IsChinese ? "环境检查" : "Run Preflight";
+        RunPreflightButton.Content = IsChinese ? "一键工位检查" : "Check Station";
         AutomationSmokeButton.Content = IsChinese ? "自动化检查" : "Automation Smoke";
         ScanSpikeButton.Content = IsChinese ? "扫描 Ti5" : "Scan Ti5";
         ImportEsiButton.Content = IsChinese ? "导入 ESI" : "Import ESI";
+        ImportLastEsiButton.Content = IsChinese ? "导入上次 ESI" : "Import Last";
         PrepareTwinCatButton.Content = IsChinese ? "准备 TwinCAT" : "Prepare TwinCAT";
         ActivateTwinCatCheckBox.Content = IsChinese ? "激活配置" : "Activate";
+        AmsLabel.Text = "AMS Net ID";
+        PortLabel.Text = IsChinese ? "端口" : "Port";
+        PrefixLabel.Text = IsChinese ? "符号前缀" : "Symbol Prefix";
         CheckAdsSymbolsButton.Content = IsChinese ? "检查符号" : "Check Symbols";
         StartTestButton.Content = IsChinese ? "开始测试" : "Start Test";
         OpenReportButton.Content = IsChinese ? "打开报告" : "Open Report";
@@ -82,22 +92,68 @@ public partial class MainWindow : Window
         FixtureCheckBox.Content = IsChinese ? "治具已确认" : "Fixture ready";
         PowerLimitCheckBox.Content = IsChinese ? "限流电源已确认" : "Current-limited power";
         LiveStatusText.Text = IsChinese ? "空闲" : "Idle";
-        EnvironmentBadge.Text = preflightOk ? (IsChinese ? "环境 OK" : "Environment OK") : (IsChinese ? "环境待检查" : "Environment");
-        AdsBadge.Text = adsOk ? (IsChinese ? "ADS OK" : "ADS OK") : (IsChinese ? "ADS 待检查" : "ADS pending");
-        MotionBadge.Text = IsChinese ? "运动锁定" : "Motion locked";
+        UpdateBadges();
     }
 
-    private void RunPreflightButton_Click(object sender, RoutedEventArgs e)
+    private async void RunPreflightButton_Click(object sender, RoutedEventArgs e)
     {
-        var report = systemProbe.CheckPrerequisites();
-        preflightOk = report.Ok;
-        EnvironmentBadge.Text = report.Ok ? (IsChinese ? "环境 OK" : "Environment OK") : (IsChinese ? "环境异常" : "Environment issue");
-        EnvironmentBadge.Foreground = Brush(report.Ok ? "#244C2A" : "#682D2D");
-        PreflightSummary.Text = report.Ok
-            ? (IsChinese ? "所有前置检查通过" : "All prerequisite checks passed")
-            : (IsChinese ? "请查看前置检查输出" : "Review prerequisite output");
+        await RunStationReadinessAsync(autoStarted: false);
+    }
 
-        WriteOutput($"Preflight: {(report.Ok ? "OK" : "FAILED")}");
+    private async Task RunStationReadinessAsync(bool autoStarted)
+    {
+        var station = FullStationPath();
+        SetBusy(true);
+        PreflightSummary.Text = autoStarted
+            ? (IsChinese ? "软件启动，正在自动检查工位..." : "Application started; checking station...")
+            : (IsChinese ? "正在执行一键工位检查..." : "Running station readiness check...");
+        WriteOutput(autoStarted ? "Startup station readiness check started." : "Manual station readiness check started.");
+
+        try
+        {
+            var report = await Task.Run(() => stationReadinessService.Check(station));
+            ApplyReadinessReport(report);
+            WriteReadinessReport(report);
+        }
+        catch (Exception exc)
+        {
+            preflightOk = false;
+            ti5Found = false;
+            adsOk = false;
+            PreflightSummary.Text = IsChinese ? "工位检查失败" : "Station check failed";
+            UpdateBadges();
+            WriteOutput($"Station readiness error: {exc.Message}");
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private void ApplyReadinessReport(StationReadinessReport report)
+    {
+        preflightOk = report.Preflight?.Ok == true;
+        ti5Found = report.Preparation?.ScanReport?.Ti5Found == true;
+        adsOk = report.AdsSymbols?.Ok == true;
+        PreflightSummary.Text = report.Ready
+            ? (IsChinese ? "工位就绪检查通过，仍需操作员确认安全项后才能运动" : "Station checks passed; operator safety confirmation is still required before motion")
+            : (IsChinese ? "工位检查发现问题，请查看事件输出" : "Station checks found issues; review event output");
+
+        if (report.EsiAutoImport?.InstallResult is { } installResult)
+        {
+            EsiSummary.Text = installResult.Summary.Label;
+        }
+        else if (report.EsiAutoImport is not null)
+        {
+            EsiSummary.Text = report.EsiAutoImport.Message;
+        }
+
+        UpdateBadges(report.Ready);
+    }
+
+    private void WriteReadinessReport(StationReadinessReport report)
+    {
+        WriteOutput($"Station readiness: {(report.Ready ? "OK" : "FAILED")}");
         foreach (var check in report.Checks)
         {
             WriteOutput($"[{check.Status}] {check.Name}: {check.Message}");
@@ -106,6 +162,51 @@ public partial class MainWindow : Window
                 WriteOutput($"    {check.Detail}");
             }
         }
+
+        if (report.Preparation?.LinkPlan is not null)
+        {
+            WriteOutput($"Ti5: vendor 0x{report.Preparation.LinkPlan.VendorId:X8}, product 0x{report.Preparation.LinkPlan.ProductCode:X8}, revision 0x{report.Preparation.LinkPlan.RevisionNumber:X8}");
+            foreach (var warning in report.Preparation.LinkPlan.Warnings)
+            {
+                WriteOutput($"Warning: {warning}");
+            }
+        }
+
+        if (report.Preflight is not null && !report.Preflight.Ok)
+        {
+            foreach (var check in report.Preflight.Checks)
+            {
+                WriteOutput($"Preflight [{check.Status}] {check.Name}: {check.Message}");
+            }
+        }
+
+        if (report.Preparation?.ScanReport is { } scanReport)
+        {
+            foreach (var box in scanReport.Boxes)
+            {
+                WriteOutput($"Scan box {box.MasterIndex}.{box.BoxIndex}: {box.Name}, vendor 0x{box.VendorId:X8}, product 0x{box.ProductCode:X8}, revision 0x{box.RevisionNo:X8}");
+            }
+        }
+
+        if (report.AdsSymbols is { Ok: false } adsReport)
+        {
+            foreach (var symbol in adsReport.Symbols.Where(symbol => !symbol.Ok))
+            {
+                WriteOutput($"ADS [{symbol.ExpectedType}] {symbol.Name}: {symbol.Message}");
+            }
+        }
+    }
+
+    private void UpdateBadges(bool stationReady = false)
+    {
+        EnvironmentBadge.Text = preflightOk ? (IsChinese ? "环境 OK" : "Environment OK") : (IsChinese ? "环境待检查" : "Environment");
+        EnvironmentBadge.Foreground = Brush(preflightOk ? "#244C2A" : "#6A4A00");
+        AdsBadge.Text = adsOk ? "ADS OK" : (IsChinese ? "ADS 待检查" : "ADS pending");
+        AdsBadge.Foreground = Brush(adsOk ? "#244C2A" : "#6A4A00");
+        MotionBadge.Text = stationReady
+            ? (IsChinese ? "就绪待确认" : "Ready gated")
+            : (IsChinese ? "运动锁定" : "Motion locked");
+        MotionBadge.Foreground = Brush(stationReady ? "#244C2A" : "#682D2D");
     }
 
     private void ImportEsiButton_Click(object sender, RoutedEventArgs e)
@@ -122,9 +223,9 @@ public partial class MainWindow : Window
 
         try
         {
-            var result = esiService.Install(dialog.FileName);
+            var result = esiAutoImportService.ImportAndRemember(dialog.FileName);
             EsiSummary.Text = result.Summary.Label;
-            WriteOutput("ESI installed.");
+            WriteOutput("ESI installed and remembered.");
             WriteOutput(result.Summary.Label);
             WriteOutput($"Source: {result.SourcePath}");
             WriteOutput($"Target: {result.TargetPath}");
@@ -134,6 +235,19 @@ public partial class MainWindow : Window
             EsiSummary.Text = IsChinese ? "ESI 导入失败" : "ESI import failed";
             WriteOutput($"ESI error: {exc.Message}");
             MessageBox.Show(this, exc.Message, IsChinese ? "ESI 导入失败" : "ESI Import Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void ImportLastEsiButton_Click(object sender, RoutedEventArgs e)
+    {
+        var report = esiAutoImportService.ImportLastUsed();
+        EsiSummary.Text = report.InstallResult?.Summary.Label ?? report.Message;
+        WriteOutput($"Last ESI import: {(report.Ok ? "OK" : "FAILED")}");
+        WriteOutput(report.Message);
+        if (report.InstallResult is not null)
+        {
+            WriteOutput($"Source: {report.InstallResult.SourcePath}");
+            WriteOutput($"Target: {report.InstallResult.TargetPath}");
         }
     }
 
@@ -186,7 +300,7 @@ public partial class MainWindow : Window
 
         var report = adsSymbolValidator.Check(new AdsConnectionOptions(AmsNetIdBox.Text.Trim(), port, SymbolPrefixBox.Text.Trim()));
         adsOk = report.Ok;
-        AdsBadge.Text = report.Ok ? (IsChinese ? "ADS OK" : "ADS symbols OK") : (IsChinese ? "ADS 异常" : "ADS issue");
+        AdsBadge.Text = report.Ok ? "ADS OK" : (IsChinese ? "ADS 异常" : "ADS issue");
         AdsBadge.Foreground = Brush(report.Ok ? "#244C2A" : "#682D2D");
 
         WriteOutput($"ADS symbol check: {(report.Ok ? "OK" : "FAILED")}");
@@ -257,7 +371,7 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(
                 this,
-                IsChinese ? "请先完成环境检查、Ti5 扫描和 ADS 符号检查。" : "Run preflight, Ti5 scan, and ADS symbol check before motion.",
+                IsChinese ? "请先完成一键工位检查，并确保环境、Ti5 扫描和 ADS 符号检查全部通过。" : "Run the station readiness check and make sure environment, Ti5 scan, and ADS symbols all pass before motion.",
                 IsChinese ? "测试未就绪" : "Test Not Ready",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
@@ -332,6 +446,7 @@ public partial class MainWindow : Window
     {
         RunPreflightButton.IsEnabled = !busy;
         ImportEsiButton.IsEnabled = !busy;
+        ImportLastEsiButton.IsEnabled = !busy;
         PrepareTwinCatButton.IsEnabled = !busy;
         AutomationSmokeButton.IsEnabled = !busy;
         ScanSpikeButton.IsEnabled = !busy;

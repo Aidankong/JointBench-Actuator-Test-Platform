@@ -113,7 +113,7 @@
                             <TextBlock x:Name="ReadinessHeader" Text="Station Readiness" FontSize="16" FontWeight="SemiBold" Foreground="#16202A" />
                             <TextBlock x:Name="PreflightSummary" Text="Not checked" FontSize="13" Foreground="#5D6B7C" Margin="0,4,0,12" />
                             <StackPanel Orientation="Horizontal">
-                                <Button x:Name="RunPreflightButton" Content="Run Preflight" Click="RunPreflightButton_Click" Style="{StaticResource PrimaryButton}" />
+                                <Button x:Name="RunPreflightButton" Content="Check Station" Click="RunPreflightButton_Click" Style="{StaticResource PrimaryButton}" />
                                 <Button x:Name="AutomationSmokeButton" Content="Automation Smoke" Click="AutomationSmokeButton_Click" Style="{StaticResource SecondaryButton}" />
                                 <Button x:Name="ScanSpikeButton" Content="Scan Ti5" Click="ScanSpikeButton_Click" Style="{StaticResource SecondaryButton}" />
                             </StackPanel>
@@ -126,6 +126,7 @@
                             <TextBlock x:Name="EsiSummary" Text="No file selected" FontSize="13" Foreground="#5D6B7C" Margin="0,4,0,12" />
                             <StackPanel Orientation="Horizontal">
                                 <Button x:Name="ImportEsiButton" Content="Import ESI" Click="ImportEsiButton_Click" Style="{StaticResource PrimaryButton}" />
+                                <Button x:Name="ImportLastEsiButton" Content="Import Last" Click="ImportLastEsiButton_Click" Style="{StaticResource SecondaryButton}" />
                                 <Button x:Name="PrepareTwinCatButton" Content="Prepare TwinCAT" Click="PrepareTwinCatButton_Click" Style="{StaticResource SecondaryButton}" />
                                 <CheckBox x:Name="ActivateTwinCatCheckBox" Content="Activate" />
                             </StackPanel>
