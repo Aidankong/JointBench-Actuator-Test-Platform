@@ -335,6 +335,15 @@ public partial class MainWindow : Window
             var report = await Task.Run(() => preparationService.Prepare(new TwinCatPreparationRequest(station, activate)));
             WriteOutput($"TwinCAT preparation: {(report.Ok ? "OK" : "FAILED")}");
             WriteOutput(report.Message);
+            if (!activate)
+            {
+                WriteOutput("Dry-run only: ADS symbols will remain unavailable until Activate is checked and TwinCAT configuration is activated.");
+            }
+            else if (report.Activated)
+            {
+                WriteOutput("Activation requested TwinCAT restart. Wait for TwinCAT to return to Run, then run station readiness again.");
+            }
+
             if (report.LinkPlan is not null)
             {
                 foreach (var link in report.LinkPlan.Links)

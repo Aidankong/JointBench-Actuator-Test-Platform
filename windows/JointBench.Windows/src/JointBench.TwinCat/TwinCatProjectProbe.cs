@@ -47,16 +47,33 @@ public sealed record TwinCatProjectProbeReport(
     IReadOnlyList<string> ImportedPouTemplates,
     bool PlcBuildSucceeded,
     Ti5PdoLinkPlan? LinkPlan,
-    IReadOnlyList<string> LinkedVariables);
+    IReadOnlyList<string> LinkedVariables,
+    bool ActivationRequested = false,
+    bool Activated = false);
 
-public sealed class TwinCatProjectProbe
+public sealed record TwinCatProjectPreparationRequest(
+    string RepositoryRoot,
+    string ProgId = "TcXaeShell.DTE.15.0",
+    string? OutputRoot = null,
+    bool Activate = false);
+
+public interface ITwinCatProjectPreparer
+{
+    TwinCatProjectProbeReport Prepare(TwinCatProjectPreparationRequest request);
+}
+
+public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
 {
     private const string TwinCatProjectTemplate = @"C:\TwinCAT\3.1\Components\Base\PrjTemplate\TwinCAT Project.tsproj";
+
+    public TwinCatProjectProbeReport Prepare(TwinCatProjectPreparationRequest request) =>
+        CreateProjectWithPlcTemplates(request.RepositoryRoot, request.ProgId, request.OutputRoot, request.Activate);
 
     public TwinCatProjectProbeReport CreateProjectWithPlcTemplates(
         string repositoryRoot,
         string progId = "TcXaeShell.DTE.15.0",
-        string? outputRoot = null)
+        string? outputRoot = null,
+        bool activate = false)
     {
         var tempRoot = outputRoot ?? Path.Combine(Path.GetTempPath(), $"jointbench-tc-project-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
@@ -113,6 +130,12 @@ public sealed class TwinCatProjectProbe
             }
 
             var (linkPlan, linkedVariables) = ScanTi5AndLinkVariables(sysManager, tempRoot);
+            var activated = false;
+            if (activate)
+            {
+                ActivateConfiguration(dte, sysManager);
+                activated = true;
+            }
 
             return new TwinCatProjectProbeReport(
                 true,
@@ -123,11 +146,13 @@ public sealed class TwinCatProjectProbe
                 templates.PouTemplatePaths,
                 plcBuildSucceeded,
                 linkPlan,
-                linkedVariables);
+                linkedVariables,
+                activate,
+                activated);
         }
         catch (Exception exc)
         {
-            return new TwinCatProjectProbeReport(false, ExceptionChain(exc), tempRoot, "JointBenchProjectProbe", "JointBenchPlc", [], false, null, []);
+            return new TwinCatProjectProbeReport(false, ExceptionChain(exc), tempRoot, "JointBenchProjectProbe", "JointBenchPlc", [], false, null, [], activate, false);
         }
         finally
         {
@@ -159,6 +184,23 @@ public sealed class TwinCatProjectProbe
                 }
             }
         }
+    }
+
+    private static void ActivateConfiguration(object dte, object sysManager)
+    {
+        try
+        {
+            ComAutomation.Invoke(dte, "ExecuteCommand", "File.SaveAll");
+        }
+        catch
+        {
+            // Saving through DTE is best effort; ActivateConfiguration reports the authoritative result.
+        }
+
+        ComAutomation.Invoke(sysManager, "ActivateConfiguration");
+        Thread.Sleep(TimeSpan.FromSeconds(2));
+        ComAutomation.Invoke(sysManager, "StartRestartTwinCAT");
+        Thread.Sleep(TimeSpan.FromSeconds(10));
     }
 
     private static bool BuildSolution(object dte, object sysManager, string tempRoot)

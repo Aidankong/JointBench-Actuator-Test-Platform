@@ -146,12 +146,15 @@ public sealed record TwinCatPreparationReport(
     bool Activated,
     string Message,
     EtherCatScanReport? ScanReport,
-    Ti5PdoLinkPlan? LinkPlan);
+    Ti5PdoLinkPlan? LinkPlan,
+    TwinCatProjectProbeReport? ProjectReport = null);
 
 public sealed class TwinCatPreparationService
 {
-    private readonly EtherCatScanProbe scanner;
-    private readonly SystemProbe systemProbe;
+    private readonly Func<string, EtherCatScanReport> scanner;
+    private readonly Func<PreflightReport> preflight;
+    private readonly ITwinCatProjectPreparer projectPreparer;
+    private readonly string repositoryRoot;
 
     public TwinCatPreparationService()
         : this(new EtherCatScanProbe(), new SystemProbe())
@@ -159,21 +162,32 @@ public sealed class TwinCatPreparationService
     }
 
     public TwinCatPreparationService(EtherCatScanProbe scanner, SystemProbe systemProbe)
+        : this(scanner.Scan, systemProbe.CheckPrerequisites, new TwinCatProjectProbe())
+    {
+    }
+
+    public TwinCatPreparationService(
+        Func<string, EtherCatScanReport> scanner,
+        Func<PreflightReport> preflight,
+        ITwinCatProjectPreparer? projectPreparer = null,
+        string? repositoryRoot = null)
     {
         this.scanner = scanner;
-        this.systemProbe = systemProbe;
+        this.preflight = preflight;
+        this.projectPreparer = projectPreparer ?? new TwinCatProjectProbe();
+        this.repositoryRoot = repositoryRoot ?? Environment.CurrentDirectory;
     }
 
     public TwinCatPreparationReport Prepare(TwinCatPreparationRequest request)
     {
         _ = StationConfigLoader.Load(request.StationDirectory);
-        var preflight = systemProbe.CheckPrerequisites();
-        if (!preflight.Ok)
+        var preflightReport = preflight();
+        if (!preflightReport.Ok)
         {
             return new TwinCatPreparationReport(false, false, "Prerequisite check failed.", null, null);
         }
 
-        var scan = scanner.Scan(request.ProgId);
+        var scan = scanner(request.ProgId);
         if (!scan.Ok || !scan.Ti5Found)
         {
             return new TwinCatPreparationReport(false, false, scan.Error.Length > 0 ? scan.Error : "Ti5 slave was not found.", scan, null);
@@ -186,11 +200,24 @@ public sealed class TwinCatPreparationService
             return new TwinCatPreparationReport(true, false, "TwinCAT preparation dry run completed. Activation was not requested.", scan, plan);
         }
 
+        var projectReport = projectPreparer.Prepare(new TwinCatProjectPreparationRequest(
+            repositoryRoot,
+            request.ProgId,
+            OutputRoot: null,
+            Activate: true));
+        if (!projectReport.Ok)
+        {
+            return new TwinCatPreparationReport(false, false, $"TwinCAT project activation failed: {projectReport.Error}", scan, plan, projectReport);
+        }
+
         return new TwinCatPreparationReport(
             true,
-            false,
-            "TwinCAT scan and link plan completed. Automatic activation is gated until project import/link execution is verified on this engineering station.",
+            projectReport.Activated,
+            projectReport.Activated
+                ? "TwinCAT project generated, PDOs linked, configuration activated, and TwinCAT restart requested. Re-run station readiness after TwinCAT finishes restarting."
+                : "TwinCAT project generated and PDOs linked, but activation was not reported.",
             scan,
-            plan);
+            projectReport.LinkPlan ?? plan,
+            projectReport);
     }
 }

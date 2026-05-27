@@ -283,4 +283,133 @@ public sealed class ReportAndTwinCatPreparationTests
         Assert.NotNull(report.LinkPlan);
         Assert.Single(report.LinkedVariables);
     }
+
+    [Fact]
+    public void TwinCatPreparationActivateRunsProjectPreparer()
+    {
+        var station = CreateMinimalStation();
+        var box = Ti5Box();
+        var linkPlan = TwinCatPdoLinkPlanner.BuildTi5Plan(box);
+        var preparer = new CapturingProjectPreparer(new TwinCatProjectProbeReport(
+            true,
+            string.Empty,
+            @"C:\Temp\jointbench",
+            "JointBenchProjectProbe",
+            "JointBenchPlc",
+            ["MAIN.TcPOU"],
+            true,
+            linkPlan,
+            ["linked"],
+            ActivationRequested: true,
+            Activated: true));
+        var service = new TwinCatPreparationService(
+            scanner: _ => new EtherCatScanReport(true, "", "", null, [], [box], Ti5Found: true),
+            preflight: () => new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]),
+            projectPreparer: preparer,
+            repositoryRoot: @"C:\Repo");
+
+        var report = service.Prepare(new TwinCatPreparationRequest(station, Activate: true));
+
+        Assert.True(report.Ok);
+        Assert.True(report.Activated);
+        Assert.NotNull(report.ProjectReport);
+        Assert.NotNull(preparer.Request);
+        Assert.True(preparer.Request.Activate);
+        Assert.Equal(@"C:\Repo", preparer.Request.RepositoryRoot);
+    }
+
+    [Fact]
+    public void TwinCatPreparationDryRunDoesNotRunProjectPreparer()
+    {
+        var station = CreateMinimalStation();
+        var box = Ti5Box();
+        var preparer = new CapturingProjectPreparer(new TwinCatProjectProbeReport(
+            true,
+            string.Empty,
+            @"C:\Temp\jointbench",
+            "JointBenchProjectProbe",
+            "JointBenchPlc",
+            [],
+            true,
+            TwinCatPdoLinkPlanner.BuildTi5Plan(box),
+            []));
+        var service = new TwinCatPreparationService(
+            scanner: _ => new EtherCatScanReport(true, "", "", null, [], [box], Ti5Found: true),
+            preflight: () => new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]),
+            projectPreparer: preparer);
+
+        var report = service.Prepare(new TwinCatPreparationRequest(station, Activate: false));
+
+        Assert.True(report.Ok);
+        Assert.False(report.Activated);
+        Assert.Null(preparer.Request);
+    }
+
+    private static EtherCatBoxInfo Ti5Box() =>
+        new(
+            1,
+            1,
+            "Drive 1 (Ti5Robot_JointMotor)",
+            "TIID^Device_1_EtherCAT^Drive 1 (Ti5Robot_JointMotor)",
+            9099,
+            "Ti5Robot_JointMotor",
+            0x00522227,
+            0x00009253,
+            0x00010005,
+            0,
+            1001,
+            0,
+            @"C:\TwinCAT\3.1\Config\Io\EtherCAT\Ti5Robot_JointMotor_2.0.xml",
+            @"C:\Temp\box.xml");
+
+    private static string CreateMinimalStation()
+    {
+        var station = Path.Combine(Path.GetTempPath(), $"jointbench-station-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(station);
+        File.WriteAllText(Path.Combine(station, "bus.yaml"), """
+            ads:
+              ams_net_id: 127.0.0.1.1.1
+              ams_port: 851
+            """);
+        File.WriteAllText(Path.Combine(station, "device.yaml"), """
+            device:
+              vendor_id: 0x00522227
+              product_code: 0x00009253
+              revision_number: 0x00010005
+            ads:
+              symbol_prefix: MAIN.stJointBench
+            """);
+        File.WriteAllText(Path.Combine(station, "safety.yaml"), """
+            limits:
+              min_position_deg: -6
+              max_position_deg: 6
+              max_current_a: 3
+              max_temperature_c: 60
+              max_following_error_deg: 2
+            """);
+        File.WriteAllText(Path.Combine(station, "tests.yaml"), """
+            tests:
+              - target_position_deg: 1
+              - target_position_deg: 5
+            """);
+        return station;
+    }
+
+    private sealed class CapturingProjectPreparer : ITwinCatProjectPreparer
+    {
+        private readonly TwinCatProjectProbeReport report;
+
+        public CapturingProjectPreparer(TwinCatProjectProbeReport report)
+        {
+            this.report = report;
+        }
+
+        public TwinCatProjectPreparationRequest? Request { get; private set; }
+
+        public TwinCatProjectProbeReport Prepare(TwinCatProjectPreparationRequest request)
+        {
+            Request = request;
+            return report;
+        }
+    }
 }

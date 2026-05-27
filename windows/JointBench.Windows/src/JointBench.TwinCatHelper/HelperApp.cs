@@ -307,6 +307,14 @@ public sealed class HelperApp
                 output.WriteLine($"TwinCAT preparation: {(report.Ok ? "OK" : "FAILED")}");
                 output.WriteLine($"Activated: {report.Activated}");
                 output.WriteLine(report.Message);
+                if (report.ProjectReport is not null)
+                {
+                    output.WriteLine($"Project temp root: {report.ProjectReport.TempRoot}");
+                    output.WriteLine($"PLC build: {(report.ProjectReport.PlcBuildSucceeded ? "OK" : "FAILED")}");
+                    output.WriteLine($"Activation requested: {report.ProjectReport.ActivationRequested}");
+                    output.WriteLine($"Activated: {report.ProjectReport.Activated}");
+                }
+
                 if (report.LinkPlan is not null)
                 {
                     output.WriteLine($"Ti5: vendor 0x{report.LinkPlan.VendorId:X8}, product 0x{report.LinkPlan.ProductCode:X8}, revision 0x{report.LinkPlan.RevisionNumber:X8}");
