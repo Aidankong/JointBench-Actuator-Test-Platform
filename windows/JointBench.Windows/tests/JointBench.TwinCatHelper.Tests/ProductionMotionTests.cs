@@ -95,6 +95,26 @@ public sealed class ProductionMotionTests
         Assert.Equal(sequenceWrites.Distinct().Count(), sequenceWrites.Count);
     }
 
+    [Fact]
+    public async Task SequenceAbortsWhenNegativeCurrentMagnitudeExceedsLimit()
+    {
+        var io = new FakeAdsSymbolClient();
+        await io.WriteAsync("MAIN.stJointBench.fCurrentA", -4.0, CancellationToken.None);
+        var runner = new ProductionTestSequenceRunner(
+            new AdsMotionAdapter(io, AdsConnectionOptions.LocalDefault()),
+            new TestReportWriter(new FixedClock(new DateTimeOffset(2026, 5, 26, 8, 0, 0, TimeSpan.Zero))));
+
+        var result = await runner.RunAsync(
+            ProductionSequenceRequest.ForDefaultAcceptance(TempDir(), ReportLanguage.English),
+            CancellationToken.None);
+
+        Assert.Equal("FAIL", result.OverallResult);
+        Assert.Equal("EnableOnly", result.StageResults[0].StageName);
+        Assert.Equal("FAIL", result.StageResults[0].Result);
+        Assert.Contains("Current -4.00A exceeded 3.00A.", result.StageResults[0].FailureReasons);
+        Assert.Contains(io.Writes, write => write.Symbol.EndsWith(".bStop") && Equals(write.Value, true));
+    }
+
     private static string TempDir()
     {
         var path = Path.Combine(Path.GetTempPath(), $"jointbench-sequence-test-{Guid.NewGuid():N}");

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.0">
+  <DUT Name="ST_JointBenchAds">
+    <Declaration><![CDATA[
+TYPE ST_JointBenchAds :
+STRUCT
+    bEnable : BOOL;
+    bStart : BOOL;
+    bStop : BOOL;
+    bResetFault : BOOL;
+    fTargetPositionDeg : LREAL;
+    nCommandSequence : DINT;
+
+    bReady : BOOL;
+    bBusy : BOOL;
+    bDone : BOOL;
+    bError : BOOL;
+    bOperationEnabled : BOOL;
+    bWatchdogOk : BOOL;
+
+    fActualPositionDeg : LREAL;
+    fActualVelocityDps : LREAL;
+    fFollowingErrorDeg : LREAL;
+    fCurrentA : LREAL;
+    fTemperatureC : LREAL;
+
+    nStatusword : DINT;
+    nControlword : DINT;
+    nFaultCode : DINT;
+    nErrorCode : DINT;
+
+    sDeviceName : STRING(80);
+    nVendorId : DINT;
+    nProductCode : DINT;
+    nRevision : DINT;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

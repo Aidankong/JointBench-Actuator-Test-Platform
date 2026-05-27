@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.0">
+  <DUT Name="ST_Ti5CiA402PdoInput">
+    <Declaration><![CDATA[
+TYPE ST_Ti5CiA402PdoInput :
+STRUCT
+    nStatusword : UINT;
+    nActualPosition : DINT;
+    nActualVelocity : DINT;
+    nActualTorqueOrCurrent : INT;
+    nErrorCode : UINT;
+    nTemperatureRaw : INT;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

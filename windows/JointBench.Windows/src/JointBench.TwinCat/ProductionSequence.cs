@@ -161,7 +161,7 @@ public sealed class ProductionTestSequenceRunner
             return $"Position {state.ActualPositionDegrees:F2}deg exceeded +/-{config.MaxPositionAbsDegrees:F2}deg.";
         }
 
-        if (state.CurrentA > config.MaxCurrentA)
+        if (Math.Abs(state.CurrentA) > config.MaxCurrentA)
         {
             return $"Current {state.CurrentA:F2}A exceeded {config.MaxCurrentA:F2}A.";
         }

@@ -94,7 +94,7 @@ IF ABS(fVelocityDps) > fMaxVelocityDps THEN
     stIf.nErrorCode := 16#7004;
 END_IF
 
-IF stIf.fCurrentA > fMaxCurrentA THEN
+IF ABS(stIf.fCurrentA) > fMaxCurrentA THEN
     stIf.bError := TRUE;
     stIf.nErrorCode := 16#7005;
 END_IF

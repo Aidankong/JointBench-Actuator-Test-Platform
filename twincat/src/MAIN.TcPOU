@@ -10,20 +10,40 @@ VAR
         nProductCode := 0,
         nRevision := 0
     );
-    (* Link these placeholder structures to the Ti5 EtherCAT PDOs after scanning the slave.
+    (* Link these top-level placeholders to the Ti5 EtherCAT PDOs after scanning the slave.
        Keep MAIN.stJointBench as the ADS surface consumed by JointBench. *)
-    stTi5In AT %I* : ST_Ti5CiA402PdoInput;
-    stTi5Out AT %Q* : ST_Ti5CiA402PdoOutput;
+    nTi5Statusword AT %I* : UINT;
+    nTi5ActualPosition AT %I* : DINT;
+    nTi5ActualVelocity AT %I* : DINT;
+    nTi5ActualTorqueOrCurrent AT %I* : INT;
+    nTi5ErrorCode AT %I* : UINT;
+    nTi5TemperatureRaw AT %I* : INT;
+    nTi5Controlword AT %Q* : UINT;
+    nTi5ModeOfOperation AT %Q* : SINT;
+    nTi5TargetPosition AT %Q* : DINT;
+    stTi5In : ST_Ti5CiA402PdoInput;
+    stTi5Out : ST_Ti5CiA402PdoOutput;
     fbJointBenchAxis : FB_JointBenchAxis;
 END_VAR
 ]]></Declaration>
     <Implementation>
       <ST><![CDATA[
+stTi5In.nStatusword := nTi5Statusword;
+stTi5In.nActualPosition := nTi5ActualPosition;
+stTi5In.nActualVelocity := nTi5ActualVelocity;
+stTi5In.nActualTorqueOrCurrent := nTi5ActualTorqueOrCurrent;
+stTi5In.nErrorCode := nTi5ErrorCode;
+stTi5In.nTemperatureRaw := nTi5TemperatureRaw;
+
 fbJointBenchAxis(
     stIf := stJointBench,
     stDriveIn := stTi5In,
     stDriveOut := stTi5Out
 );
+
+nTi5Controlword := stTi5Out.nControlword;
+nTi5ModeOfOperation := stTi5Out.nModeOfOperation;
+nTi5TargetPosition := stTi5Out.nTargetPosition;
 ]]></ST>
     </Implementation>
   </POU>

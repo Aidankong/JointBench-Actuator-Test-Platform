@@ -55,7 +55,7 @@ public static class StationConfigLoader
             Double(limitsNode, "max_temperature_c", 60.0),
             Double(limitsNode, "max_following_error_deg", 2.0),
             Int(limitsNode, "communication_timeout_ms", 500));
-        var testConfigs = ReadTests(tests, safetyLimits);
+        var testConfigs = ReadTests(root.FullName, tests, safetyLimits);
 
         return new StationConfig(
             ads,
@@ -67,7 +67,7 @@ public static class StationConfigLoader
             Int(deviceNode, "revision_number", 0x00010005));
     }
 
-    private static IReadOnlyList<TestConfig> ReadTests(IReadOnlyDictionary<object, object?> root, SafetyLimits safety)
+    private static IReadOnlyList<TestConfig> ReadTests(string stationDirectory, IReadOnlyDictionary<object, object?> root, SafetyLimits safety)
     {
         var tests = root.TryGetValue("tests", out var rawTests) && rawTests is IEnumerable<object> list
             ? list.OfType<IReadOnlyDictionary<object, object?>>()
@@ -90,6 +90,38 @@ public static class StationConfigLoader
                 Double(test, "max_overshoot_pct", 10.0),
                 Double(test, "max_settling_time_s", Math.Abs(target) <= 1.0 ? 1.0 : 1.2),
                 Double(test, "max_steady_state_error_deg", Math.Abs(target) <= 1.0 ? 0.2 : 0.5)));
+        }
+
+        if (result.Count > 0)
+        {
+            return result;
+        }
+
+        foreach (var path in new[] { Path.Combine(stationDirectory, "test_1deg.yaml"), Path.Combine(stationDirectory, "test_5deg.yaml") })
+        {
+            var split = LoadYaml(path);
+            if (split.Count == 0)
+            {
+                continue;
+            }
+
+            var test = Map(split, "test");
+            var passFail = Map(split, "pass_fail");
+            var target = Double(test, "target_position_deg", path.Contains("1deg", StringComparison.OrdinalIgnoreCase) ? 1.0 : 5.0);
+            result.Add(new TestConfig(
+                Math.Abs(target) <= 1.0 ? "PositionStep1Deg" : "PositionStep5Deg",
+                Double(test, "start_position_deg", 0.0),
+                target,
+                Double(test, "duration_s", Math.Abs(target) <= 1.0 ? 2.5 : 3.0),
+                Double(test, "sample_rate_hz", 100.0),
+                Double(passFail, "settling_band_pct", 2.0),
+                Math.Max(Math.Abs(safety.MinPositionDegrees), Math.Abs(safety.MaxPositionDegrees)),
+                Double(passFail, "max_peak_current_a", safety.MaxCurrentA),
+                Double(passFail, "max_temperature_c", safety.MaxTemperatureC),
+                Double(passFail, "max_following_error_deg", safety.MaxFollowingErrorDegrees),
+                Double(passFail, "max_overshoot_pct", 10.0),
+                Double(passFail, "max_settling_time_s", Math.Abs(target) <= 1.0 ? 1.0 : 1.2),
+                Double(passFail, "max_steady_state_error_deg", Math.Abs(target) <= 1.0 ? 0.2 : 0.5)));
         }
 
         return result.Count > 0 ? result : [TestConfig.ForTarget(1.0), TestConfig.ForTarget(5.0, 3.0)];
