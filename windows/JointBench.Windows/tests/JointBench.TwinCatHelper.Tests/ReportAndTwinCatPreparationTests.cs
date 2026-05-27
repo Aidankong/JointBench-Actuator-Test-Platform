@@ -345,6 +345,21 @@ public sealed class ReportAndTwinCatPreparationTests
         Assert.Null(preparer.Request);
     }
 
+    [Fact]
+    public void TwinCatRuntimeDiagnosticsExtractsLicenseViolations()
+    {
+        var errors = TwinCatRuntimeDiagnostics.ExtractStartupErrors(
+            [
+                new TwinCatRuntimeEvent(DateTimeOffset.UtcNow, "TwinCAT System", "Error", "TwinCAT System Message: Source: License Server; Message: License Violation: License 'TC3 PLC' not found, Requested by 'JointBenchPlc Instance'"),
+                new TwinCatRuntimeEvent(DateTimeOffset.UtcNow, "TcSysSrv", "Error", "Error: >> ADS ERROR: no license found << checking TwinCAT Licenses!"),
+                new TwinCatRuntimeEvent(DateTimeOffset.UtcNow, "TcSysSrv", "Information", "TcRTime Server started: TcRTime."),
+            ]);
+
+        Assert.Equal(2, errors.Count);
+        Assert.Contains(errors, error => error.Contains("TC3 PLC", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, error => error.Contains("no license", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static EtherCatBoxInfo Ti5Box() =>
         new(
             1,

@@ -133,7 +133,14 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
             var activated = false;
             if (activate)
             {
+                var activationStart = DateTimeOffset.UtcNow.AddSeconds(-2);
                 ActivateConfiguration(dte, sysManager);
+                var runtimeErrors = TwinCatRuntimeDiagnostics.ReadRecentStartupErrors(activationStart);
+                if (runtimeErrors.Count > 0)
+                {
+                    throw new InvalidOperationException($"TwinCAT restart reported errors: {string.Join(" | ", runtimeErrors)}");
+                }
+
                 activated = true;
             }
 
