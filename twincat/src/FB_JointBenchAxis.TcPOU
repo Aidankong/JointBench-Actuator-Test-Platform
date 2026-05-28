@@ -36,6 +36,8 @@ VAR
     fTargetCounts : LREAL;
     fVelocityDps : LREAL;
     bTargetValid : BOOL;
+    bSetpointPulseActive : BOOL;
+    nSetpointPulseCycles : UINT;
 END_VAR
 ]]></Declaration>
     <Implementation>
@@ -111,16 +113,22 @@ END_IF
 
 IF stIf.bResetFault THEN
     stDriveOut.nControlword := 16#0080;
+    bSetpointPulseActive := FALSE;
+    nSetpointPulseCycles := 0;
     stIf.bError := FALSE;
     stIf.bBusy := FALSE;
     stIf.bDone := FALSE;
     stIf.nErrorCode := 0;
 ELSIF stIf.bStop THEN
     stDriveOut.nControlword := 16#0002;
+    bSetpointPulseActive := FALSE;
+    nSetpointPulseCycles := 0;
     stIf.bBusy := FALSE;
     stIf.bDone := FALSE;
 ELSIF stIf.bError THEN
     stDriveOut.nControlword := 16#0002;
+    bSetpointPulseActive := FALSE;
+    nSetpointPulseCycles := 0;
     stIf.bBusy := FALSE;
 ELSIF stIf.bEnable THEN
     stDriveOut.nModeOfOperation := 1; (* Profile Position Mode *)
@@ -138,6 +146,8 @@ ELSIF stIf.bEnable THEN
     END_CASE
 ELSE
     stDriveOut.nControlword := 16#0000; (* disable voltage *)
+    bSetpointPulseActive := FALSE;
+    nSetpointPulseCycles := 0;
     stIf.bBusy := FALSE;
     stIf.bDone := FALSE;
 END_IF
@@ -151,8 +161,20 @@ IF bStartEdge.Q AND bOperationEnabled AND stIf.bReady THEN
     ELSE
         fTargetCounts := (stIf.fTargetPositionDeg - fZeroOffsetDeg) * fCountsPerDeg * DINT_TO_LREAL(nPositionDirection);
         stDriveOut.nTargetPosition := LREAL_TO_DINT(fTargetCounts);
+        bSetpointPulseActive := TRUE;
+        nSetpointPulseCycles := 3;
         stIf.bBusy := TRUE;
         stIf.bDone := FALSE;
+    END_IF
+END_IF
+
+IF bSetpointPulseActive THEN
+    stDriveOut.nControlword := 16#003F; (* new set-point + change immediately in Profile Position Mode *)
+    IF nSetpointPulseCycles > 0 THEN
+        nSetpointPulseCycles := nSetpointPulseCycles - 1;
+    END_IF
+    IF nSetpointPulseCycles = 0 THEN
+        bSetpointPulseActive := FALSE;
     END_IF
 END_IF
 

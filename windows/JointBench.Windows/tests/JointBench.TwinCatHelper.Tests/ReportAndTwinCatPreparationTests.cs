@@ -273,6 +273,15 @@ public sealed class ReportAndTwinCatPreparationTests
     }
 
     [Fact]
+    public void AxisTemplatePulsesProfilePositionNewSetpointBit()
+    {
+        var template = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "twincat", "src", "FB_JointBenchAxis.TcPOU"));
+
+        Assert.Contains("bSetpointPulseActive", template);
+        Assert.Contains("16#003F", template);
+    }
+
+    [Fact]
     public void TwinCatProjectProbeReportCanCarryScanAndLinkDiagnostics()
     {
         var linkPlan = new Ti5PdoLinkPlan(
@@ -480,6 +489,22 @@ public sealed class ReportAndTwinCatPreparationTests
               - target_position_deg: 5
             """);
         return station;
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (Directory.Exists(Path.Combine(directory.FullName, "twincat", "src")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Repository root containing twincat/src was not found.");
     }
 
     private sealed class CapturingProjectPreparer : ITwinCatProjectPreparer

@@ -61,6 +61,8 @@ public sealed class ProductionMotionTests
         Assert.NotEqual("PASS", result.OverallResult);
         Assert.Equal(["EnableOnly", "PositionStep1Deg"], result.StageResults.Select(stage => stage.StageName));
         Assert.DoesNotContain(io.Writes, write => write.Symbol.EndsWith(".fTargetPositionDeg") && Equals(write.Value, 5.0));
+        Assert.Contains(io.Writes, write => write.Symbol.EndsWith(".bStop") && Equals(write.Value, true));
+        Assert.Contains(io.Writes, write => write.Symbol.EndsWith(".bEnable") && Equals(write.Value, false));
     }
 
     [Fact]
@@ -72,6 +74,24 @@ public sealed class ProductionMotionTests
         await Assert.ThrowsAsync<SafetyLimitException>(() => adapter.SendPositionCommandAsync(6.0, CancellationToken.None));
 
         Assert.DoesNotContain(io.Writes, write => write.Symbol.EndsWith(".bStart"));
+    }
+
+    [Fact]
+    public async Task PositionCommandPulsesStartLowHighLowForPlcEdgeDetection()
+    {
+        var io = new FakeAdsSymbolClient();
+        var adapter = new AdsMotionAdapter(
+            io,
+            AdsConnectionOptions.LocalDefault(),
+            startPulseDuration: TimeSpan.Zero);
+
+        await adapter.SendPositionCommandAsync(1.0, CancellationToken.None);
+
+        var startWrites = io.Writes
+            .Where(write => write.Symbol.EndsWith(".bStart"))
+            .Select(write => Assert.IsType<bool>(write.Value))
+            .ToList();
+        Assert.Equal([false, true, false], startWrites);
     }
 
     [Fact]

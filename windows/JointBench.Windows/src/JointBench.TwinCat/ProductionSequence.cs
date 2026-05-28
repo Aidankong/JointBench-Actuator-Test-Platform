@@ -76,6 +76,8 @@ public sealed class ProductionTestSequenceRunner
                 }
             }
 
+            await adapter.EmergencyStopAsync(cancellationToken);
+            Event("Stop requested after sequence.");
             return Finish(request, testId, outputDirectory, device, stages, samples, events);
         }
         catch (Exception exc)

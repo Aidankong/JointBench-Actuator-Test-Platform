@@ -194,6 +194,7 @@ public sealed class AdsMotionAdapter
     private readonly AdsConnectionOptions options;
     private readonly TimeSpan enableTimeout;
     private readonly TimeSpan enablePollInterval;
+    private readonly TimeSpan startPulseDuration;
     private int commandSequence;
     private double targetPositionDegrees;
 
@@ -201,12 +202,14 @@ public sealed class AdsMotionAdapter
         IAdsSymbolClient client,
         AdsConnectionOptions options,
         TimeSpan? enableTimeout = null,
-        TimeSpan? enablePollInterval = null)
+        TimeSpan? enablePollInterval = null,
+        TimeSpan? startPulseDuration = null)
     {
         this.client = client;
         this.options = options;
         this.enableTimeout = enableTimeout ?? TimeSpan.FromSeconds(8);
         this.enablePollInterval = enablePollInterval ?? TimeSpan.FromMilliseconds(20);
+        this.startPulseDuration = startPulseDuration ?? TimeSpan.FromMilliseconds(30);
     }
 
     public bool OperationEnabled { get; private set; }
@@ -314,7 +317,12 @@ public sealed class AdsMotionAdapter
         await WriteAsync("fTargetPositionDeg", positionDegrees, cancellationToken);
         await BumpCommandSequenceAsync(cancellationToken);
         await WriteAsync("bStart", false, cancellationToken);
+        await DelayStartPulseAsync(cancellationToken);
+        await BumpCommandSequenceAsync(cancellationToken);
         await WriteAsync("bStart", true, cancellationToken);
+        await DelayStartPulseAsync(cancellationToken);
+        await BumpCommandSequenceAsync(cancellationToken);
+        await WriteAsync("bStart", false, cancellationToken);
     }
 
     public async Task<ActuatorState> SampleAsync(double dtSeconds, double timestampSeconds, CancellationToken cancellationToken)
@@ -372,6 +380,9 @@ public sealed class AdsMotionAdapter
         await BumpCommandSequenceAsync(cancellationToken);
         await WriteAsync("bResetFault", false, cancellationToken);
     }
+
+    private Task DelayStartPulseAsync(CancellationToken cancellationToken) =>
+        startPulseDuration <= TimeSpan.Zero ? Task.CompletedTask : Task.Delay(startPulseDuration, cancellationToken);
 
     private async Task<double> ReadRawPositionDegreesAsync(
         string root,
