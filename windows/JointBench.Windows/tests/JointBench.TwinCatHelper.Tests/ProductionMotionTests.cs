@@ -96,6 +96,30 @@ public sealed class ProductionMotionTests
     }
 
     [Fact]
+    public async Task AutoZeroUsesRawEncoderPositionInsteadOfAlreadyOffsetPosition()
+    {
+        var io = new FakeAdsSymbolClient();
+        await io.WriteAsync("MAIN.nTi5ActualPosition", -1024, CancellationToken.None);
+        await io.WriteAsync("MAIN.stJointBench.fActualPositionDeg", 0.0, CancellationToken.None);
+        var config = new StationConfig(
+            AdsConnectionOptions.LocalDefault(),
+            SafetyLimits.DefaultTi5(),
+            StationScaling.DefaultTi5() with { AutoZeroOnCheck = true },
+            [TestConfig.ForTarget(1.0), TestConfig.ForTarget(5.0)],
+            "MAIN.stJointBench",
+            0x00522227,
+            0x00009253,
+            0x00010005);
+        var configurator = new AdsRuntimeConfigurator(() => io, TimeSpan.Zero);
+
+        var report = await configurator.ApplyAsync(config, CancellationToken.None);
+
+        Assert.True(report.Ok);
+        var zeroOffsetWrite = io.Writes.Last(write => write.Symbol == "MAIN.fTi5ZeroOffsetDeg");
+        Assert.Equal(0.703125, Assert.IsType<double>(zeroOffsetWrite.Value), precision: 6);
+    }
+
+    [Fact]
     public async Task EnableTimeoutIncludesLatestDriveState()
     {
         var io = new FakeAdsSymbolClient { AutoOperationEnabledOnEnable = false };

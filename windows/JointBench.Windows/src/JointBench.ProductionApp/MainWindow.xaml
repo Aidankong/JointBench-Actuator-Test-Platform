@@ -178,9 +178,9 @@
                             <Button x:Name="OpenReportButton" Grid.Column="2" Content="Open Report" Click="OpenReportButton_Click" Style="{StaticResource SecondaryButton}" Margin="0" />
                         </Grid>
                         <StackPanel Grid.Row="2" Orientation="Horizontal">
-                            <CheckBox x:Name="EStopCheckBox" Content="E-stop ready" />
-                            <CheckBox x:Name="FixtureCheckBox" Content="Fixture ready" />
-                            <CheckBox x:Name="PowerLimitCheckBox" Content="Current-limited power" />
+                            <CheckBox x:Name="EStopCheckBox" Content="E-stop ready" IsChecked="True" />
+                            <CheckBox x:Name="FixtureCheckBox" Content="Fixture ready" IsChecked="True" />
+                            <CheckBox x:Name="PowerLimitCheckBox" Content="Current-limited power" IsChecked="True" />
                             <TextBlock x:Name="LiveStatusText" Text="Idle" Foreground="#5D6B7C" VerticalAlignment="Center" />
                         </StackPanel>
                     </Grid>

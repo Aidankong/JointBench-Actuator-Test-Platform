@@ -225,7 +225,12 @@ public sealed class StationReadinessService
         try
         {
             adsReport = checkAdsSymbols(config.Ads);
-            checks.Add(new CheckItem("ads-symbols", adsReport.Ok ? "ok" : "error", adsReport.Ok ? "ADS symbols are available." : "ADS symbol check failed.", $"{adsReport.AmsNetId}:{adsReport.Port} {adsReport.SymbolPrefix}"));
+            var adsFailure = adsReport.Symbols.FirstOrDefault(symbol => !symbol.Ok);
+            checks.Add(new CheckItem(
+                "ads-symbols",
+                adsReport.Ok ? "ok" : "error",
+                adsReport.Ok ? "ADS symbols are available." : adsFailure?.Name == "<ads-state>" ? adsFailure.Message : "ADS symbol check failed.",
+                $"{adsReport.AmsNetId}:{adsReport.Port} {adsReport.SymbolPrefix}"));
         }
         catch (Exception exc)
         {

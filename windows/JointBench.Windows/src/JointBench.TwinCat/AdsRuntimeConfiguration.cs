@@ -48,8 +48,7 @@ public sealed class AdsRuntimeConfigurator
             var zeroOffset = config.Scaling.ZeroOffsetDegrees;
             if (config.Scaling.AutoZeroOnCheck)
             {
-                var currentPosition = Convert.ToDouble(await client.ReadAsync($"{config.Ads.SymbolPrefix}.fActualPositionDeg", typeof(double), cancellationToken));
-                zeroOffset -= currentPosition;
+                zeroOffset -= await ReadRawPositionDegreesAsync(client, root, config.Scaling, cancellationToken);
             }
 
             await WriteAsync(client, root, "fTi5ZeroOffsetDeg", zeroOffset, cancellationToken);
@@ -77,6 +76,22 @@ public sealed class AdsRuntimeConfigurator
 
     private static Task WriteAsync(IAdsSymbolClient client, string root, string name, object value, CancellationToken cancellationToken) =>
         client.WriteAsync($"{root}.{name}", value, cancellationToken);
+
+    private static async Task<double> ReadRawPositionDegreesAsync(
+        IAdsSymbolClient client,
+        string root,
+        StationScaling scaling,
+        CancellationToken cancellationToken)
+    {
+        if (scaling.EncoderCountsPerRev <= 0 || scaling.GearRatio <= 0.0)
+        {
+            throw new InvalidOperationException("Station scaling is invalid; encoder_counts_per_rev and gear_ratio must be positive.");
+        }
+
+        var rawCounts = Convert.ToDouble(await client.ReadAsync($"{root}.nTi5ActualPosition", typeof(int), cancellationToken));
+        var countsPerDegree = scaling.EncoderCountsPerRev * scaling.GearRatio / 360.0;
+        return rawCounts / countsPerDegree * scaling.PositionDirection;
+    }
 
     private static string PlcRoot(string symbolPrefix)
     {

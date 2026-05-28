@@ -42,6 +42,17 @@ public sealed class AdsSymbolValidator
             using var client = new AdsClient();
             client.Connect(options.AmsNetId, options.Port);
 
+            var state = client.ReadState();
+            if (state.AdsState != AdsState.Run)
+            {
+                results.Add(new AdsSymbolResult(
+                    "<ads-state>",
+                    "Run",
+                    false,
+                    $"PLC ADS state is {state.AdsState}; download/login/start the PLC application before checking symbols."));
+                return new AdsSymbolCheckReport(options.AmsNetId, options.Port, options.SymbolPrefix, false, results);
+            }
+
             foreach (var spec in RequiredSymbols)
             {
                 var symbolName = $"{options.SymbolPrefix}.{spec.Name}";
