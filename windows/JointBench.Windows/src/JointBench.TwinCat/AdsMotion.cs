@@ -259,8 +259,7 @@ public sealed class AdsMotionAdapter
             var zeroOffset = scaling.ZeroOffsetDegrees;
             if (scaling.AutoZeroOnCheck)
             {
-                var currentPosition = Convert.ToDouble(await ReadAsync("fActualPositionDeg", typeof(double), cancellationToken));
-                zeroOffset -= currentPosition;
+                zeroOffset -= await ReadRawPositionDegreesAsync(root, scaling, cancellationToken);
             }
 
             await client.WriteAsync($"{root}.fTi5ZeroOffsetDeg", zeroOffset, cancellationToken);
@@ -372,6 +371,21 @@ public sealed class AdsMotionAdapter
         await Task.Delay(60, cancellationToken);
         await BumpCommandSequenceAsync(cancellationToken);
         await WriteAsync("bResetFault", false, cancellationToken);
+    }
+
+    private async Task<double> ReadRawPositionDegreesAsync(
+        string root,
+        StationScaling scaling,
+        CancellationToken cancellationToken)
+    {
+        if (scaling.EncoderCountsPerRev <= 0 || scaling.GearRatio <= 0.0)
+        {
+            throw new InvalidOperationException("Station scaling is invalid; encoder_counts_per_rev and gear_ratio must be positive.");
+        }
+
+        var rawCounts = Convert.ToDouble(await client.ReadAsync($"{root}.nTi5ActualPosition", typeof(int), cancellationToken));
+        var countsPerDegree = scaling.EncoderCountsPerRev * scaling.GearRatio / 360.0;
+        return rawCounts / countsPerDegree * scaling.PositionDirection;
     }
 
     private async Task<ActuatorState> ReadCurrentStateAsync(double timestampSeconds, CancellationToken cancellationToken) =>

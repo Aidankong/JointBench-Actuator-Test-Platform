@@ -4,11 +4,18 @@ public sealed class ProductionTestSequenceRunner
 {
     private readonly AdsMotionAdapter adapter;
     private readonly TestReportWriter reportWriter;
+    private readonly Action<string>? progress;
 
     public ProductionTestSequenceRunner(AdsMotionAdapter adapter, TestReportWriter reportWriter)
+        : this(adapter, reportWriter, null)
+    {
+    }
+
+    public ProductionTestSequenceRunner(AdsMotionAdapter adapter, TestReportWriter reportWriter, Action<string>? progress)
     {
         this.adapter = adapter;
         this.reportWriter = reportWriter;
+        this.progress = progress;
     }
 
     public async Task<ProductionSequenceResult> RunAsync(ProductionSequenceRequest request, CancellationToken cancellationToken)
@@ -20,7 +27,12 @@ public sealed class ProductionTestSequenceRunner
         var stages = new List<StageResult>();
         var start = DateTimeOffset.UtcNow;
 
-        void Event(string message) => events.Add($"{(DateTimeOffset.UtcNow - start).TotalSeconds,8:F3}s  {message}");
+        void Event(string message)
+        {
+            var line = $"{(DateTimeOffset.UtcNow - start).TotalSeconds,8:F3}s  {message}";
+            events.Add(line);
+            progress?.Invoke(line);
+        }
 
         try
         {
@@ -37,6 +49,8 @@ public sealed class ProductionTestSequenceRunner
             var device = await adapter.ReadDeviceInfoAsync(cancellationToken);
             Event($"Device info read: {device.DeviceId}.");
 
+            Event("Enable-only stage started.");
+            Event("Waiting for bOperationEnabled=True.");
             await adapter.SetEnableAsync(true, cancellationToken);
             var enableSample = await adapter.SampleAsync(0.01, 0.0, cancellationToken);
             samples.Add(enableSample);
@@ -49,11 +63,11 @@ public sealed class ProductionTestSequenceRunner
             }
 
             stages.Add(StageResult.Pass("EnableOnly"));
-            Event("Enable-only stage passed.");
+            Event($"Enable-only stage passed. statusword=0x{enableSample.Statusword ?? 0:X4}, position={enableSample.ActualPositionDegrees:F3}deg.");
 
             foreach (var config in request.Tests)
             {
-                var stage = await RunStepAsync(config, samples, events, cancellationToken);
+                var stage = await RunStepAsync(config, samples, Event, cancellationToken);
                 stages.Add(stage);
                 if (config.Name == "PositionStep1Deg" && stage.Result != "PASS")
                 {
@@ -86,14 +100,14 @@ public sealed class ProductionTestSequenceRunner
     private async Task<StageResult> RunStepAsync(
         TestConfig config,
         List<ActuatorState> allSamples,
-        List<string> events,
+        Action<string> eventSink,
         CancellationToken cancellationToken)
     {
         var stageSamples = new List<ActuatorState>();
         var failureReasons = new List<string>();
         var aborted = false;
 
-        events.Add($"{0,8:F3}s  Stage {config.Name} started.");
+        eventSink($"Stage {config.Name} started.");
         await adapter.SendPositionCommandAsync(config.TargetPositionDegrees, cancellationToken);
         var sampleCount = (int)(config.DurationSeconds * config.SampleRateHz) + 1;
         for (var index = 0; index < sampleCount; index++)
@@ -108,9 +122,14 @@ public sealed class ProductionTestSequenceRunner
             {
                 aborted = true;
                 failureReasons.Add(safetyFailure);
-                events.Add($"{timestamp,8:F3}s  Safety abort: {safetyFailure}");
+                eventSink($"Safety abort: {safetyFailure}");
                 await adapter.EmergencyStopAsync(cancellationToken);
                 break;
+            }
+
+            if (index == 0 || index == sampleCount - 1 || index % Math.Max(1, (int)(config.SampleRateHz / 2.0)) == 0)
+            {
+                eventSink($"{config.Name}: target={config.TargetPositionDegrees:F3}deg actual={state.ActualPositionDegrees:F3}deg current={state.CurrentA:F2}A temp={state.TemperatureC:F1}C.");
             }
 
             if (!adapter.IsSimulation)
@@ -121,7 +140,7 @@ public sealed class ProductionTestSequenceRunner
 
         var metrics = StepResponseAnalyzer.Analyze(stageSamples, config);
         var judgment = StepResponseAnalyzer.Judge(metrics, config, aborted, failureReasons);
-        events.Add($"{config.DurationSeconds,8:F3}s  Stage {config.Name} finished with {judgment.Result}.");
+        eventSink($"Stage {config.Name} finished with {judgment.Result}.");
         return new StageResult(config.Name, judgment.Result, judgment.FailureReasons);
     }
 

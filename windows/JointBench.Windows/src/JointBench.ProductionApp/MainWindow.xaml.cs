@@ -402,7 +402,12 @@ public partial class MainWindow : Window
             using var client = new BeckhoffAdsSymbolClient();
             var runner = new ProductionTestSequenceRunner(
                 new AdsMotionAdapter(client, config.Ads),
-                new TestReportWriter());
+                new TestReportWriter(),
+                line => Dispatcher.Invoke(() =>
+                {
+                    WriteOutput(line);
+                    LiveStatusText.Text = line;
+                }));
             var result = await runner.RunAsync(
                 new ProductionSequenceRequest(
                     Path.Combine(Environment.CurrentDirectory, "reports"),

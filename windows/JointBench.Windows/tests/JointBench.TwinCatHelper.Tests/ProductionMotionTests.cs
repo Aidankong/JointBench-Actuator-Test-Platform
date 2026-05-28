@@ -120,6 +120,42 @@ public sealed class ProductionMotionTests
     }
 
     [Fact]
+    public async Task MotionAdapterAutoZeroUsesRawEncoderPositionBeforeEnable()
+    {
+        var io = new FakeAdsSymbolClient();
+        await io.WriteAsync("MAIN.nTi5ActualPosition", -1024, CancellationToken.None);
+        await io.WriteAsync("MAIN.stJointBench.fActualPositionDeg", 0.0, CancellationToken.None);
+        var adapter = new AdsMotionAdapter(io, AdsConnectionOptions.LocalDefault());
+
+        var report = await adapter.ApplyRuntimeConfigAsync(
+            SafetyLimits.DefaultTi5(),
+            StationScaling.DefaultTi5() with { AutoZeroOnCheck = true },
+            CancellationToken.None);
+
+        Assert.True(report.Ok);
+        var zeroOffsetWrite = io.Writes.Last(write => write.Symbol == "MAIN.fTi5ZeroOffsetDeg");
+        Assert.Equal(0.703125, Assert.IsType<double>(zeroOffsetWrite.Value), precision: 6);
+    }
+
+    [Fact]
+    public async Task SequencePublishesProgressEventsDuringProductionRun()
+    {
+        var progress = new List<string>();
+        var runner = new ProductionTestSequenceRunner(
+            new AdsMotionAdapter(new FakeAdsSymbolClient(), AdsConnectionOptions.LocalDefault()),
+            new TestReportWriter(new FixedClock(new DateTimeOffset(2026, 5, 26, 8, 0, 0, TimeSpan.Zero))),
+            progress.Add);
+
+        await runner.RunAsync(
+            ProductionSequenceRequest.ForDefaultAcceptance(TempDir(), ReportLanguage.English),
+            CancellationToken.None);
+
+        Assert.Contains(progress, item => item.Contains("Enable-only stage started."));
+        Assert.Contains(progress, item => item.Contains("Stage PositionStep1Deg started."));
+        Assert.Contains(progress, item => item.Contains("Stage PositionStep5Deg finished"));
+    }
+
+    [Fact]
     public async Task EnableTimeoutIncludesLatestDriveState()
     {
         var io = new FakeAdsSymbolClient { AutoOperationEnabledOnEnable = false };
