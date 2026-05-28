@@ -118,13 +118,15 @@ public sealed class StationReadinessService
     private readonly Func<EsiAutoImportReport> autoImportEsi;
     private readonly Func<TwinCatPreparationRequest, TwinCatPreparationReport> prepareTwinCat;
     private readonly Func<AdsConnectionOptions, AdsSymbolCheckReport> checkAdsSymbols;
+    private readonly Func<ActiveTwinCatConfigReport> inspectActiveConfig;
 
     public StationReadinessService()
         : this(
             () => new SystemProbe().CheckPrerequisites(),
             () => new EsiAutoImportService().ImportLastUsed(),
             request => new TwinCatPreparationService().Prepare(request),
-            options => new AdsSymbolValidator().Check(options))
+            options => new AdsSymbolValidator().Check(options),
+            () => TwinCatActiveConfigProbe.Inspect())
     {
     }
 
@@ -132,12 +134,14 @@ public sealed class StationReadinessService
         Func<PreflightReport> preflight,
         Func<EsiAutoImportReport> autoImportEsi,
         Func<TwinCatPreparationRequest, TwinCatPreparationReport> prepareTwinCat,
-        Func<AdsConnectionOptions, AdsSymbolCheckReport> checkAdsSymbols)
+        Func<AdsConnectionOptions, AdsSymbolCheckReport> checkAdsSymbols,
+        Func<ActiveTwinCatConfigReport>? inspectActiveConfig = null)
     {
         this.preflight = preflight;
         this.autoImportEsi = autoImportEsi;
         this.prepareTwinCat = prepareTwinCat;
         this.checkAdsSymbols = checkAdsSymbols;
+        this.inspectActiveConfig = inspectActiveConfig ?? (() => TwinCatActiveConfigProbe.Inspect());
     }
 
     public StationReadinessReport Check(string stationDirectory)
@@ -147,6 +151,7 @@ public sealed class StationReadinessService
         EsiAutoImportReport? esiReport = null;
         TwinCatPreparationReport? preparationReport = null;
         AdsSymbolCheckReport? adsReport = null;
+        ActiveTwinCatConfigReport? activeConfigReport = null;
 
         StationConfig config;
         try
@@ -183,9 +188,23 @@ public sealed class StationReadinessService
         try
         {
             preparationReport = prepareTwinCat(new TwinCatPreparationRequest(stationDirectory, Activate: false));
-            var ti5Found = preparationReport.ScanReport?.Ti5Found == true;
-            checks.Add(new CheckItem("twincat-prepare", preparationReport.Ok && ti5Found ? "ok" : "error", preparationReport.Message));
-            checks.Add(new CheckItem("ti5-scan", ti5Found ? "ok" : "error", ti5Found ? "Ti5 slave found." : "Ti5 slave was not found."));
+            activeConfigReport = inspectActiveConfig();
+            checks.Add(new CheckItem(
+                "twincat-active-config",
+                activeConfigReport.Ti5Found ? "ok" : "warning",
+                activeConfigReport.Message,
+                activeConfigReport.SourcePath));
+            var scannedTi5 = preparationReport.ScanReport?.Ti5Found == true;
+            var ti5Found = scannedTi5 || activeConfigReport.Ti5Found;
+            var preparationOk = preparationReport.Ok || activeConfigReport.Ti5Found;
+            checks.Add(new CheckItem(
+                "twincat-prepare",
+                preparationOk && ti5Found ? "ok" : "error",
+                preparationReport.Ok ? preparationReport.Message : activeConfigReport.Ti5Found ? "Active TwinCAT configuration is already prepared with Ti5." : preparationReport.Message));
+            checks.Add(new CheckItem(
+                "ti5-scan",
+                ti5Found ? "ok" : "error",
+                scannedTi5 ? "Ti5 slave found." : activeConfigReport.Ti5Found ? "Ti5 found in active TwinCAT configuration." : "Ti5 slave was not found."));
         }
         catch (Exception exc)
         {

@@ -1,4 +1,6 @@
 using JointBench.TwinCat;
+using AdsState = TwinCAT.Ads.AdsState;
+using StateInfo = TwinCAT.Ads.StateInfo;
 
 namespace JointBench.TwinCatHelper.Tests;
 
@@ -358,6 +360,32 @@ public sealed class ReportAndTwinCatPreparationTests
         Assert.Equal(2, errors.Count);
         Assert.Contains(errors, error => error.Contains("TC3 PLC", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(errors, error => error.Contains("no license", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlcRuntimeControllerStartsInvalidPort()
+    {
+        var client = new FakePlcRuntimeStateClient(new StateInfo(AdsState.Invalid, 0));
+
+        var state = TwinCatPlcRuntimeController.EnsureRun(client, TimeSpan.Zero);
+
+        Assert.Equal(AdsState.Run, state.AdsState);
+        Assert.Contains(client.WrittenStates, written => written.AdsState == AdsState.Run);
+    }
+
+    private sealed class FakePlcRuntimeStateClient(StateInfo initialState) : IPlcRuntimeStateClient
+    {
+        private StateInfo state = initialState;
+
+        public List<StateInfo> WrittenStates { get; } = [];
+
+        public StateInfo ReadState() => state;
+
+        public void WriteControl(StateInfo stateInfo)
+        {
+            WrittenStates.Add(stateInfo);
+            state = new StateInfo(AdsState.Run, stateInfo.DeviceState);
+        }
     }
 
     private static EtherCatBoxInfo Ti5Box() =>

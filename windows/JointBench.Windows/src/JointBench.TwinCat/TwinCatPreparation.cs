@@ -214,7 +214,7 @@ public sealed class TwinCatPreparationService
             true,
             projectReport.Activated,
             projectReport.Activated
-                ? "TwinCAT project generated, PDOs linked, configuration activated, and TwinCAT restart requested. Re-run station readiness after TwinCAT finishes restarting."
+                ? "TwinCAT project generated, PDOs linked, configuration activated, TwinCAT restarted, and PLC runtime started."
                 : "TwinCAT project generated and PDOs linked, but activation was not reported.",
             scan,
             projectReport.LinkPlan ?? plan,

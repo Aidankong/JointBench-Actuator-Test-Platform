@@ -91,6 +91,62 @@ public sealed class StationReadinessTests
         Assert.Contains(report.Checks, check => check.Name == "ads-symbols" && check.Status == "ok");
     }
 
+    [Fact]
+    public void StationReadinessAcceptsActiveTi5ConfigWhenOnlineScanIsUnavailable()
+    {
+        var station = CreateStation();
+        var scan = new EtherCatScanReport(
+            false,
+            "No EtherCAT master was found.",
+            "",
+            null,
+            [],
+            [],
+            Ti5Found: false);
+        var service = new StationReadinessService(
+            preflight: () => new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]),
+            autoImportEsi: () => new EsiAutoImportReport(false, true, "No last ESI file has been selected.", null, null),
+            prepareTwinCat: _ => new TwinCatPreparationReport(false, false, "No EtherCAT master was found.", scan, null),
+            checkAdsSymbols: options => new AdsSymbolCheckReport(options.AmsNetId, options.Port, options.SymbolPrefix, true, []),
+            inspectActiveConfig: () => new ActiveTwinCatConfigReport(true, true, "Active TwinCAT configuration contains Ti5.", @"C:\TwinCAT\3.1\Boot\CurrentConfig.tszip"));
+
+        var report = service.Check(station);
+
+        Assert.True(report.Ready);
+        Assert.Contains(report.Checks, check => check.Name == "twincat-active-config" && check.Status == "ok");
+        Assert.Contains(report.Checks, check => check.Name == "ti5-scan" && check.Status == "ok");
+    }
+
+    [Fact]
+    public void ActiveConfigProbeFindsTi5InCurrentConfigArchive()
+    {
+        var root = Directory.CreateTempSubdirectory("jointbench-active-config-").FullName;
+        var archivePath = Path.Combine(root, "CurrentConfig.tszip");
+        try
+        {
+            using (var archive = System.IO.Compression.ZipFile.Open(archivePath, System.IO.Compression.ZipArchiveMode.Create))
+            {
+                var entry = archive.CreateEntry("JointBenchProjectProbe.tsproj");
+                using var writer = new StreamWriter(entry.Open());
+                writer.Write("""
+                    <Project>
+                      <EtherCAT VendorId="#x00522227" ProductCode="#x00009253" RevisionNo="#x00010005" Type="Ti5Robot_JointMotor" />
+                    </Project>
+                    """);
+            }
+
+            var report = TwinCatActiveConfigProbe.InspectArchive(archivePath);
+
+            Assert.True(report.Ok);
+            Assert.True(report.Ti5Found);
+            Assert.Equal(archivePath, report.SourcePath);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateStation()
     {
         var station = Directory.CreateTempSubdirectory("jointbench-station-ready-").FullName;

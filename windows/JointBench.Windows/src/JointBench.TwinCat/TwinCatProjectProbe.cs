@@ -208,6 +208,7 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
         Thread.Sleep(TimeSpan.FromSeconds(2));
         ComAutomation.Invoke(sysManager, "StartRestartTwinCAT");
         Thread.Sleep(TimeSpan.FromSeconds(10));
+        TwinCatPlcRuntimeController.EnsureLocalPortRun(851);
     }
 
     private static bool BuildSolution(object dte, object sysManager, string tempRoot)
