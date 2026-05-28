@@ -263,16 +263,25 @@ public sealed class StationReadinessTests
             """);
         File.WriteAllText(Path.Combine(station, "safety.yaml"), """
             limits:
-              min_position_deg: -6
-              max_position_deg: 6
+              min_position_deg: -30
+              max_position_deg: 750
               max_current_a: 3
               max_temperature_c: 60
               max_following_error_deg: 2
             """);
         File.WriteAllText(Path.Combine(station, "tests.yaml"), """
             tests:
-              - target_position_deg: 1
-              - target_position_deg: 5
+              - name: PositionStep1Deg
+                type: position_step_response
+                target_position_deg: 1
+              - name: LowSpeedForwardTwoTurns
+                type: position_ramp
+                start_position_deg: 0
+                target_position_deg: 720
+              - name: LowSpeedReverseTwoTurns
+                type: position_ramp
+                start_position_deg: 720
+                target_position_deg: 0
         """);
         return station;
     }

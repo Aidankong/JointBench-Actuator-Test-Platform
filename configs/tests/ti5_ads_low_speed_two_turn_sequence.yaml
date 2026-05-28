@@ -1,0 +1,30 @@
+tests:
+  - name: PositionStep1Deg
+    type: position_step_response
+    start_position_deg: 0
+    target_position_deg: 1
+    duration_s: 2.5
+    sample_rate_hz: 100
+    max_overshoot_pct: 10
+    max_settling_time_s: 1.0
+    max_steady_state_error_deg: 0.2
+
+  - name: LowSpeedForwardTwoTurns
+    type: position_ramp
+    start_position_deg: 0
+    target_position_deg: 720
+    duration_s: 36
+    sample_rate_hz: 10
+    max_overshoot_pct: 10
+    max_settling_time_s: 38
+    max_steady_state_error_deg: 1.0
+
+  - name: LowSpeedReverseTwoTurns
+    type: position_ramp
+    start_position_deg: 720
+    target_position_deg: 0
+    duration_s: 36
+    sample_rate_hz: 10
+    max_overshoot_pct: 10
+    max_settling_time_s: 38
+    max_steady_state_error_deg: 1.0

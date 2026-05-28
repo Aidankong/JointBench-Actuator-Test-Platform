@@ -54,7 +54,7 @@ public sealed class ProductionTestSequenceRunner
             await adapter.SetEnableAsync(true, cancellationToken);
             var enableSample = await adapter.SampleAsync(0.01, 0.0, cancellationToken);
             samples.Add(enableSample);
-            var enableFailure = SafetyFailure(enableSample, request.Tests[0]);
+            var enableFailure = SafetyFailure(enableSample, request.Tests.FirstOrDefault() ?? TestConfig.ForTarget(1.0));
             if (enableFailure is not null)
             {
                 stages.Add(StageResult.Fail("EnableOnly", [enableFailure]));
@@ -67,11 +67,11 @@ public sealed class ProductionTestSequenceRunner
 
             foreach (var config in request.Tests)
             {
-                var stage = await RunStepAsync(config, samples, Event, cancellationToken);
+                var stage = await RunMotionStageAsync(config, samples, Event, cancellationToken);
                 stages.Add(stage);
                 if (config.Name == "PositionStep1Deg" && stage.Result != "PASS")
                 {
-                    Event("5deg stage skipped because 1deg did not pass.");
+                    Event("Remaining motion stages skipped because 1deg did not pass.");
                     break;
                 }
             }
@@ -97,6 +97,17 @@ public sealed class ProductionTestSequenceRunner
             stages.Add(StageResult.Aborted(stages.Count == 0 ? "EnableOnly" : stages[^1].StageName, [exc.Message]));
             return Finish(request, testId, outputDirectory, device, stages, samples, events);
         }
+    }
+
+    private Task<StageResult> RunMotionStageAsync(
+        TestConfig config,
+        List<ActuatorState> allSamples,
+        Action<string> eventSink,
+        CancellationToken cancellationToken)
+    {
+        return string.Equals(config.MotionProfile, "position_ramp", StringComparison.OrdinalIgnoreCase)
+            ? RunRampAsync(config, allSamples, eventSink, cancellationToken)
+            : RunStepAsync(config, allSamples, eventSink, cancellationToken);
     }
 
     private async Task<StageResult> RunStepAsync(
@@ -146,6 +157,55 @@ public sealed class ProductionTestSequenceRunner
         return new StageResult(config.Name, judgment.Result, judgment.FailureReasons);
     }
 
+    private async Task<StageResult> RunRampAsync(
+        TestConfig config,
+        List<ActuatorState> allSamples,
+        Action<string> eventSink,
+        CancellationToken cancellationToken)
+    {
+        var stageSamples = new List<ActuatorState>();
+        var failureReasons = new List<string>();
+        var aborted = false;
+
+        eventSink($"Stage {config.Name} started.");
+        var sampleCount = Math.Max(2, (int)(config.DurationSeconds * config.SampleRateHz) + 1);
+        for (var index = 0; index < sampleCount; index++)
+        {
+            var timestamp = index * config.SamplePeriodSeconds;
+            var progress = (double)index / (sampleCount - 1);
+            var commandTarget = config.StartPositionDegrees + ((config.TargetPositionDegrees - config.StartPositionDegrees) * progress);
+            await adapter.SendPositionCommandAsync(commandTarget, cancellationToken);
+
+            var state = await adapter.SampleAsync(config.SamplePeriodSeconds, timestamp, cancellationToken);
+            stageSamples.Add(state);
+            allSamples.Add(state);
+
+            var safetyFailure = SafetyFailure(state, config);
+            if (safetyFailure is not null)
+            {
+                aborted = true;
+                failureReasons.Add(safetyFailure);
+                eventSink($"Safety abort: {safetyFailure}");
+                await adapter.EmergencyStopAsync(cancellationToken);
+                break;
+            }
+
+            if (index == 0 || index == sampleCount - 1 || index % Math.Max(1, (int)config.SampleRateHz) == 0)
+            {
+                eventSink($"{config.Name}: target={commandTarget:F3}deg actual={state.ActualPositionDegrees:F3}deg current={state.CurrentA:F2}A temp={state.TemperatureC:F1}C.");
+            }
+
+            if (!adapter.IsSimulation)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(config.SamplePeriodSeconds), cancellationToken);
+            }
+        }
+
+        var judgment = JudgeRamp(config, stageSamples, aborted, failureReasons);
+        eventSink($"Stage {config.Name} finished with {judgment.Result}.");
+        return new StageResult(config.Name, judgment.Result, judgment.FailureReasons);
+    }
+
     private ProductionSequenceResult Finish(
         ProductionSequenceRequest request,
         string testId,
@@ -155,9 +215,10 @@ public sealed class ProductionTestSequenceRunner
         IReadOnlyList<ActuatorState> samples,
         IReadOnlyList<string> events)
     {
+        var expectedStageCount = request.Tests.Count + 1;
         var overall = stages.Any(stage => stage.Result is "ABORTED") ? "ABORTED" :
             stages.Any(stage => stage.Result is "FAIL" or "INVALID") ? "FAIL" :
-            stages.Count >= 3 ? "PASS" : "FAIL";
+            stages.Count >= expectedStageCount ? "PASS" : "FAIL";
         var result = ProductionSequenceResult.Create(
             testId,
             overall,
@@ -200,5 +261,33 @@ public sealed class ProductionTestSequenceRunner
         }
 
         return null;
+    }
+
+    private static StepJudgment JudgeRamp(
+        TestConfig config,
+        IReadOnlyList<ActuatorState> samples,
+        bool aborted,
+        IReadOnlyList<string> safetyFailures)
+    {
+        if (aborted)
+        {
+            return new StepJudgment("ABORTED", safetyFailures);
+        }
+
+        if (samples.Count == 0)
+        {
+            return new StepJudgment("INVALID", ["Ramp stage did not collect any samples."]);
+        }
+
+        var final = samples[^1];
+        var finalError = Math.Abs(config.TargetPositionDegrees - final.ActualPositionDegrees);
+        if (finalError > config.MaxSteadyStateErrorDegrees)
+        {
+            return new StepJudgment(
+                "FAIL",
+                [$"Final position error {finalError:F3}deg exceeded {config.MaxSteadyStateErrorDegrees:F3}deg."]);
+        }
+
+        return StepJudgment.Pass();
     }
 }

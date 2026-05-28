@@ -13,12 +13,35 @@ public sealed record StationConfig(
     int ProductCode,
     int RevisionNumber)
 {
-    public bool MotionAllowed =>
-        !string.IsNullOrWhiteSpace(Ads.AmsNetId) &&
-        Safety.MinPositionDegrees <= -1.0 &&
-        Safety.MaxPositionDegrees >= 5.0 &&
-        Tests.Any(test => Math.Abs(test.TargetPositionDegrees - 1.0) < 1e-9) &&
-        Tests.Any(test => Math.Abs(test.TargetPositionDegrees - 5.0) < 1e-9);
+    public bool MotionAllowed
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Ads.AmsNetId) || Tests.Count == 0)
+            {
+                return false;
+            }
+
+            var minCommand = Tests.Min(test => Math.Min(test.StartPositionDegrees, test.TargetPositionDegrees));
+            var maxCommand = Tests.Max(test => Math.Max(test.StartPositionDegrees, test.TargetPositionDegrees));
+            var hasOneDegreeGate = Tests.Any(test =>
+                string.Equals(test.Name, "PositionStep1Deg", StringComparison.OrdinalIgnoreCase) ||
+                Math.Abs(test.TargetPositionDegrees - 1.0) < 1e-9);
+            var hasForwardTwoTurns = Tests.Any(test =>
+                string.Equals(test.MotionProfile, "position_ramp", StringComparison.OrdinalIgnoreCase) &&
+                test.TargetPositionDegrees >= 720.0);
+            var hasReverseTwoTurns = Tests.Any(test =>
+                string.Equals(test.MotionProfile, "position_ramp", StringComparison.OrdinalIgnoreCase) &&
+                test.StartPositionDegrees >= 720.0 &&
+                Math.Abs(test.TargetPositionDegrees) <= 1.0);
+
+            return Safety.MinPositionDegrees <= minCommand &&
+                Safety.MaxPositionDegrees >= maxCommand &&
+                hasOneDegreeGate &&
+                hasForwardTwoTurns &&
+                hasReverseTwoTurns;
+        }
+    }
 }
 
 public sealed record StationScaling(
@@ -100,20 +123,23 @@ public static class StationConfigLoader
         foreach (var test in tests)
         {
             var target = Double(test, "target_position_deg", 1.0);
+            var motionProfile = String(test, "type", "position_step_response");
+            var isRamp = string.Equals(motionProfile, "position_ramp", StringComparison.OrdinalIgnoreCase);
             result.Add(new TestConfig(
-                String(test, "name", Math.Abs(target) <= 1.0 ? "PositionStep1Deg" : "PositionStep5Deg"),
+                String(test, "name", DefaultTestName(target, motionProfile)),
                 Double(test, "start_position_deg", 0.0),
                 target,
-                Double(test, "duration_s", Math.Abs(target) <= 1.0 ? 2.5 : 3.0),
-                Double(test, "sample_rate_hz", 100.0),
+                Double(test, "duration_s", isRamp ? 36.0 : Math.Abs(target) <= 1.0 ? 2.5 : 3.0),
+                Double(test, "sample_rate_hz", isRamp ? 10.0 : 100.0),
                 Double(test, "settling_band_pct", 2.0),
                 Math.Max(Math.Abs(safety.MinPositionDegrees), Math.Abs(safety.MaxPositionDegrees)),
                 safety.MaxCurrentA,
                 safety.MaxTemperatureC,
                 safety.MaxFollowingErrorDegrees,
                 Double(test, "max_overshoot_pct", 10.0),
-                Double(test, "max_settling_time_s", Math.Abs(target) <= 1.0 ? 1.0 : 1.2),
-                Double(test, "max_steady_state_error_deg", Math.Abs(target) <= 1.0 ? 0.2 : 0.5)));
+                Double(test, "max_settling_time_s", isRamp ? Double(test, "duration_s", 36.0) + 2.0 : Math.Abs(target) <= 1.0 ? 1.0 : 1.2),
+                Double(test, "max_steady_state_error_deg", isRamp ? 1.0 : Math.Abs(target) <= 1.0 ? 0.2 : 0.5),
+                motionProfile));
         }
 
         if (result.Count > 0)
@@ -132,8 +158,9 @@ public static class StationConfigLoader
             var test = Map(split, "test");
             var passFail = Map(split, "pass_fail");
             var target = Double(test, "target_position_deg", path.Contains("1deg", StringComparison.OrdinalIgnoreCase) ? 1.0 : 5.0);
+            var motionProfile = String(test, "type", "position_step_response");
             result.Add(new TestConfig(
-                Math.Abs(target) <= 1.0 ? "PositionStep1Deg" : "PositionStep5Deg",
+                DefaultTestName(target, motionProfile),
                 Double(test, "start_position_deg", 0.0),
                 target,
                 Double(test, "duration_s", Math.Abs(target) <= 1.0 ? 2.5 : 3.0),
@@ -145,7 +172,8 @@ public static class StationConfigLoader
                 Double(passFail, "max_following_error_deg", safety.MaxFollowingErrorDegrees),
                 Double(passFail, "max_overshoot_pct", 10.0),
                 Double(passFail, "max_settling_time_s", Math.Abs(target) <= 1.0 ? 1.0 : 1.2),
-                Double(passFail, "max_steady_state_error_deg", Math.Abs(target) <= 1.0 ? 0.2 : 0.5)));
+                Double(passFail, "max_steady_state_error_deg", Math.Abs(target) <= 1.0 ? 0.2 : 0.5),
+                motionProfile));
         }
 
         return result.Count > 0 ? result : [TestConfig.ForTarget(1.0), TestConfig.ForTarget(5.0, 3.0)];
@@ -199,5 +227,15 @@ public static class StationConfigLoader
         }
 
         return value is bool boolValue ? boolValue : Convert.ToBoolean(value);
+    }
+
+    private static string DefaultTestName(double target, string motionProfile)
+    {
+        if (string.Equals(motionProfile, "position_ramp", StringComparison.OrdinalIgnoreCase))
+        {
+            return target >= 720.0 ? "LowSpeedForwardTwoTurns" : "LowSpeedReverseTwoTurns";
+        }
+
+        return Math.Abs(target) <= 1.0 ? "PositionStep1Deg" : "PositionStep5Deg";
     }
 }

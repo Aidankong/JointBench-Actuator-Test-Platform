@@ -68,7 +68,7 @@ public partial class MainWindow : Window
         Workflow5.Text = IsChinese ? "5  ADS 符号" : "5  ADS symbols";
         Workflow6.Text = IsChinese ? "Enable only 使能不运动" : "Enable only";
         Workflow7.Text = IsChinese ? "1deg 阶跃" : "1deg step";
-        Workflow8.Text = IsChinese ? "5deg 验收" : "5deg acceptance";
+        Workflow8.Text = IsChinese ? "低速两圈正反转" : "Low-speed two-turn";
         ReadinessHeader.Text = IsChinese ? "工位就绪" : "Station Readiness";
         EsiHeader.Text = "ESI";
         TestHeader.Text = IsChinese ? "产线测试" : "Production Test";
@@ -401,7 +401,10 @@ public partial class MainWindow : Window
             var config = StationConfigLoader.Load(FullStationPath());
             using var client = new BeckhoffAdsSymbolClient();
             var runner = new ProductionTestSequenceRunner(
-                new AdsMotionAdapter(client, config.Ads),
+                new AdsMotionAdapter(
+                    client,
+                    config.Ads,
+                    maxTargetAbsDegrees: Math.Max(Math.Abs(config.Safety.MinPositionDegrees), Math.Abs(config.Safety.MaxPositionDegrees))),
                 new TestReportWriter(),
                 line => Dispatcher.Invoke(() =>
                 {

@@ -168,7 +168,10 @@ public sealed class StationReadinessService
         try
         {
             config = StationConfigLoader.Load(stationDirectory);
-            checks.Add(new CheckItem("station-config", config.MotionAllowed ? "ok" : "error", config.MotionAllowed ? "Station config is motion-ready." : "Station config is missing required 1deg/5deg or safety limits."));
+            checks.Add(new CheckItem(
+                "station-config",
+                config.MotionAllowed ? "ok" : "error",
+                config.MotionAllowed ? "Station config is motion-ready." : "Station config is missing required 1deg/two-turn ramp tests or safety limits."));
         }
         catch (Exception exc)
         {

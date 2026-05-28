@@ -89,7 +89,7 @@
                     <Separator Margin="0,18,0,18" />
                     <TextBlock x:Name="Workflow6" Text="Enable only" FontSize="14" Foreground="#6B7280" Margin="0,0,0,10" />
                     <TextBlock x:Name="Workflow7" Text="1deg step" FontSize="14" Foreground="#6B7280" Margin="0,0,0,10" />
-                    <TextBlock x:Name="Workflow8" Text="5deg acceptance" FontSize="14" Foreground="#6B7280" />
+                    <TextBlock x:Name="Workflow8" Text="Low-speed two-turn" FontSize="14" Foreground="#6B7280" />
                 </StackPanel>
             </Border>
 

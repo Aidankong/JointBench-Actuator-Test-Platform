@@ -195,6 +195,7 @@ public sealed class AdsMotionAdapter
     private readonly TimeSpan enableTimeout;
     private readonly TimeSpan enablePollInterval;
     private readonly TimeSpan startPulseDuration;
+    private readonly double maxTargetAbsDegrees;
     private int commandSequence;
     private double targetPositionDegrees;
 
@@ -203,13 +204,15 @@ public sealed class AdsMotionAdapter
         AdsConnectionOptions options,
         TimeSpan? enableTimeout = null,
         TimeSpan? enablePollInterval = null,
-        TimeSpan? startPulseDuration = null)
+        TimeSpan? startPulseDuration = null,
+        double maxTargetAbsDegrees = 5.0)
     {
         this.client = client;
         this.options = options;
         this.enableTimeout = enableTimeout ?? TimeSpan.FromSeconds(8);
         this.enablePollInterval = enablePollInterval ?? TimeSpan.FromMilliseconds(20);
         this.startPulseDuration = startPulseDuration ?? TimeSpan.FromMilliseconds(30);
+        this.maxTargetAbsDegrees = maxTargetAbsDegrees;
     }
 
     public bool OperationEnabled { get; private set; }
@@ -308,9 +311,9 @@ public sealed class AdsMotionAdapter
 
     public async Task SendPositionCommandAsync(double positionDegrees, CancellationToken cancellationToken)
     {
-        if (Math.Abs(positionDegrees) > 5.0)
+        if (Math.Abs(positionDegrees) > maxTargetAbsDegrees)
         {
-            throw new SafetyLimitException("TwinCAT ADS V1 first motion is limited to +/-5 deg.");
+            throw new SafetyLimitException($"TwinCAT ADS target {positionDegrees:F3}deg exceeds configured +/-{maxTargetAbsDegrees:F3}deg motion limit.");
         }
 
         targetPositionDegrees = positionDegrees;
@@ -382,7 +385,7 @@ public sealed class AdsMotionAdapter
     }
 
     private Task DelayStartPulseAsync(CancellationToken cancellationToken) =>
-        startPulseDuration <= TimeSpan.Zero ? Task.CompletedTask : Task.Delay(startPulseDuration, cancellationToken);
+        IsSimulation || startPulseDuration <= TimeSpan.Zero ? Task.CompletedTask : Task.Delay(startPulseDuration, cancellationToken);
 
     private async Task<double> ReadRawPositionDegreesAsync(
         string root,

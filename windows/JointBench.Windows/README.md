@@ -42,7 +42,7 @@ dotnet run --project src\JointBench.TwinCatHelper -- run-sequence --station data
 - Validate basic TwinCAT / Visual Studio DTE Automation Interface startup.
 - Scan EtherCAT masters and slave boxes through a temporary TwinCAT project without activating configuration.
 - Build a Ti5 PDO link plan for the scanned slave.
-- Run the C# native enable-only, 1deg, and 5deg ADS sequence after the station is confirmed safe.
+- Run the C# native enable-only, 1deg gate, low-speed forward two-turn, and low-speed reverse two-turn ADS sequence after the station is confirmed safe.
 - Generate `raw_data.csv`, `events.log`, `config_snapshot.yaml`, `report.md`, and `report.html` from C#.
 - Switch the WPF production shell between Chinese and English; reports follow the selected language.
 - Provide JSON output for integration and diagnostics.
@@ -59,6 +59,8 @@ data\stations\ti5_ads\
   safety.yaml
   tests.yaml
 ```
+
+For the current Ti5 production sequence, `tests.yaml` can be based on `configs\tests\ti5_ads_low_speed_two_turn_sequence.yaml`, with safety position limits large enough for 0 -> 720deg -> 0deg motion.
 
 `run-sequence` requires `--confirm-motion` for real ADS motion. Use `--fake` only for offline software verification.
 

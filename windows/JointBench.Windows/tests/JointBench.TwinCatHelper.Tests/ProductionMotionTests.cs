@@ -28,11 +28,15 @@ public sealed class ProductionMotionTests
     }
 
     [Fact]
-    public async Task SequenceRunsFiveDegreeOnlyAfterOneDegreePasses()
+    public async Task SequenceRunsTwoTurnRampOnlyAfterOneDegreePasses()
     {
         var io = new FakeAdsSymbolClient();
         var runner = new ProductionTestSequenceRunner(
-            new AdsMotionAdapter(io, AdsConnectionOptions.LocalDefault()),
+            new AdsMotionAdapter(
+                io,
+                AdsConnectionOptions.LocalDefault(),
+                startPulseDuration: TimeSpan.Zero,
+                maxTargetAbsDegrees: 750.0),
             new TestReportWriter(new FixedClock(new DateTimeOffset(2026, 5, 26, 8, 0, 0, TimeSpan.Zero))));
 
         var result = await runner.RunAsync(
@@ -40,19 +44,25 @@ public sealed class ProductionMotionTests
             CancellationToken.None);
 
         Assert.Equal("PASS", result.OverallResult);
-        Assert.Equal(["EnableOnly", "PositionStep1Deg", "PositionStep5Deg"], result.StageResults.Select(stage => stage.StageName));
+        Assert.Equal(["EnableOnly", "PositionStep1Deg", "LowSpeedForwardTwoTurns", "LowSpeedReverseTwoTurns"], result.StageResults.Select(stage => stage.StageName));
         Assert.True(result.StageResults[1].Result == "PASS");
         Assert.True(result.StageResults[2].Result == "PASS");
+        Assert.True(result.StageResults[3].Result == "PASS");
         Assert.Contains(io.Writes, write => write.Symbol.EndsWith(".fTargetPositionDeg") && Equals(write.Value, 1.0));
-        Assert.Contains(io.Writes, write => write.Symbol.EndsWith(".fTargetPositionDeg") && Equals(write.Value, 5.0));
+        Assert.Contains(io.Writes, write => write.Symbol.EndsWith(".fTargetPositionDeg") && Equals(write.Value, 720.0));
+        Assert.Contains(io.Writes, write => write.Symbol.EndsWith(".fTargetPositionDeg") && Equals(write.Value, 0.0));
     }
 
     [Fact]
-    public async Task SequenceSkipsFiveDegreeWhenOneDegreeFails()
+    public async Task SequenceSkipsTwoTurnRampsWhenOneDegreeFails()
     {
         var io = new FakeAdsSymbolClient { ForceActualPositionDegrees = 0.0 };
         var runner = new ProductionTestSequenceRunner(
-            new AdsMotionAdapter(io, AdsConnectionOptions.LocalDefault()),
+            new AdsMotionAdapter(
+                io,
+                AdsConnectionOptions.LocalDefault(),
+                startPulseDuration: TimeSpan.Zero,
+                maxTargetAbsDegrees: 750.0),
             new TestReportWriter(new FixedClock(new DateTimeOffset(2026, 5, 26, 8, 0, 0, TimeSpan.Zero))));
 
         var request = ProductionSequenceRequest.ForDefaultAcceptance(TempDir(), ReportLanguage.SimplifiedChinese);
@@ -60,13 +70,13 @@ public sealed class ProductionMotionTests
 
         Assert.NotEqual("PASS", result.OverallResult);
         Assert.Equal(["EnableOnly", "PositionStep1Deg"], result.StageResults.Select(stage => stage.StageName));
-        Assert.DoesNotContain(io.Writes, write => write.Symbol.EndsWith(".fTargetPositionDeg") && Equals(write.Value, 5.0));
+        Assert.DoesNotContain(io.Writes, write => write.Symbol.EndsWith(".fTargetPositionDeg") && Equals(write.Value, 720.0));
         Assert.Contains(io.Writes, write => write.Symbol.EndsWith(".bStop") && Equals(write.Value, true));
         Assert.Contains(io.Writes, write => write.Symbol.EndsWith(".bEnable") && Equals(write.Value, false));
     }
 
     [Fact]
-    public async Task TargetAboveFiveDegreesIsRejectedBeforeAdsStart()
+    public async Task TargetAboveDefaultFiveDegreeLimitIsRejectedBeforeAdsStart()
     {
         var io = new FakeAdsSymbolClient();
         var adapter = new AdsMotionAdapter(io, AdsConnectionOptions.LocalDefault());
@@ -74,6 +84,23 @@ public sealed class ProductionMotionTests
         await Assert.ThrowsAsync<SafetyLimitException>(() => adapter.SendPositionCommandAsync(6.0, CancellationToken.None));
 
         Assert.DoesNotContain(io.Writes, write => write.Symbol.EndsWith(".bStart"));
+    }
+
+    [Fact]
+    public async Task ConfiguredTwoTurnTargetIsAllowedButBeyondConfiguredLimitIsRejected()
+    {
+        var io = new FakeAdsSymbolClient();
+        var adapter = new AdsMotionAdapter(
+            io,
+            AdsConnectionOptions.LocalDefault(),
+            startPulseDuration: TimeSpan.Zero,
+            maxTargetAbsDegrees: 720.0);
+
+        await adapter.SendPositionCommandAsync(720.0, CancellationToken.None);
+        await Assert.ThrowsAsync<SafetyLimitException>(() => adapter.SendPositionCommandAsync(721.0, CancellationToken.None));
+
+        Assert.Contains(io.Writes, write => write.Symbol.EndsWith(".fTargetPositionDeg") && Equals(write.Value, 720.0));
+        Assert.DoesNotContain(io.Writes, write => write.Symbol.EndsWith(".fTargetPositionDeg") && Equals(write.Value, 721.0));
     }
 
     [Fact]
@@ -162,7 +189,11 @@ public sealed class ProductionMotionTests
     {
         var progress = new List<string>();
         var runner = new ProductionTestSequenceRunner(
-            new AdsMotionAdapter(new FakeAdsSymbolClient(), AdsConnectionOptions.LocalDefault()),
+            new AdsMotionAdapter(
+                new FakeAdsSymbolClient(),
+                AdsConnectionOptions.LocalDefault(),
+                startPulseDuration: TimeSpan.Zero,
+                maxTargetAbsDegrees: 750.0),
             new TestReportWriter(new FixedClock(new DateTimeOffset(2026, 5, 26, 8, 0, 0, TimeSpan.Zero))),
             progress.Add);
 
@@ -172,7 +203,8 @@ public sealed class ProductionMotionTests
 
         Assert.Contains(progress, item => item.Contains("Enable-only stage started."));
         Assert.Contains(progress, item => item.Contains("Stage PositionStep1Deg started."));
-        Assert.Contains(progress, item => item.Contains("Stage PositionStep5Deg finished"));
+        Assert.Contains(progress, item => item.Contains("Stage LowSpeedForwardTwoTurns started."));
+        Assert.Contains(progress, item => item.Contains("Stage LowSpeedReverseTwoTurns finished"));
     }
 
     [Fact]

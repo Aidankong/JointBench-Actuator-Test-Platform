@@ -17,7 +17,7 @@ public sealed record SafetyLimits(
     int CommunicationTimeoutMs = 500,
     double MaxSpeedDps = 30.0)
 {
-    public static SafetyLimits DefaultTi5() => new(-6.0, 6.0, 3.0, 60.0, 2.0);
+    public static SafetyLimits DefaultTi5() => new(-30.0, 750.0, 3.0, 60.0, 2.0);
 }
 
 public sealed record TestConfig(
@@ -33,7 +33,8 @@ public sealed record TestConfig(
     double MaxFollowingErrorDegrees,
     double MaxOvershootPercent,
     double MaxSettlingTimeSeconds,
-    double MaxSteadyStateErrorDegrees)
+    double MaxSteadyStateErrorDegrees,
+    string MotionProfile = "position_step_response")
 {
     public double SamplePeriodSeconds => 1.0 / SampleRateHz;
 
@@ -54,6 +55,30 @@ public sealed record TestConfig(
             10.0,
             isOneDegree ? 1.0 : 1.2,
             isOneDegree ? 0.2 : 0.5);
+    }
+
+    public static TestConfig ForLowSpeedRamp(
+        string name,
+        double startPositionDegrees,
+        double targetPositionDegrees,
+        double durationSeconds = 36.0,
+        double sampleRateHz = 10.0)
+    {
+        return new TestConfig(
+            name,
+            startPositionDegrees,
+            targetPositionDegrees,
+            durationSeconds,
+            sampleRateHz,
+            2.0,
+            750.0,
+            3.0,
+            60.0,
+            2.0,
+            10.0,
+            durationSeconds + 2.0,
+            1.0,
+            "position_ramp");
     }
 }
 
@@ -189,7 +214,11 @@ public sealed record ProductionSequenceRequest(
             language,
             AdsConnectionOptions.LocalDefault(),
             SafetyLimits.DefaultTi5(),
-            [TestConfig.ForTarget(1.0, 2.5, 100.0), TestConfig.ForTarget(5.0, 3.0, 100.0)]);
+            [
+                TestConfig.ForTarget(1.0, 2.5, 100.0),
+                TestConfig.ForLowSpeedRamp("LowSpeedForwardTwoTurns", 0.0, 720.0),
+                TestConfig.ForLowSpeedRamp("LowSpeedReverseTwoTurns", 720.0, 0.0),
+            ]);
 }
 
 public sealed record ProductionSequenceResult(

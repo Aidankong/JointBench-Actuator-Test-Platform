@@ -178,7 +178,10 @@ public sealed class HelperApp
         }
 
         using IAdsSymbolClient client = fake ? new FakeAdsSymbolClient() : new BeckhoffAdsSymbolClient();
-        var adapter = new AdsMotionAdapter(client, station.Ads);
+        var adapter = new AdsMotionAdapter(
+            client,
+            station.Ads,
+            maxTargetAbsDegrees: Math.Max(Math.Abs(station.Safety.MinPositionDegrees), Math.Abs(station.Safety.MaxPositionDegrees)));
         var runner = new ProductionTestSequenceRunner(adapter, new TestReportWriter());
         var request = new ProductionSequenceRequest(
             commandLine.Option("reports") ?? Path.Combine(Environment.CurrentDirectory, "reports"),

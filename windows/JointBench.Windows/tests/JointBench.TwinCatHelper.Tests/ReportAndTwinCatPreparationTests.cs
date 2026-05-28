@@ -177,8 +177,8 @@ public sealed class ReportAndTwinCatPreparationTests
             """);
         File.WriteAllText(Path.Combine(station, "safety.yaml"), """
             limits:
-              min_position_deg: -6
-              max_position_deg: 6
+              min_position_deg: -30
+              max_position_deg: 750
               max_current_a: 3
               max_temperature_c: 60
               max_following_error_deg: 2
@@ -186,13 +186,26 @@ public sealed class ReportAndTwinCatPreparationTests
         File.WriteAllText(Path.Combine(station, "tests.yaml"), """
             tests:
               - name: PositionStep1Deg
+                type: position_step_response
                 target_position_deg: 1
                 duration_s: 2.5
                 sample_rate_hz: 100
-              - name: PositionStep5Deg
-                target_position_deg: 5
-                duration_s: 3
-                sample_rate_hz: 100
+              - name: LowSpeedForwardTwoTurns
+                type: position_ramp
+                start_position_deg: 0
+                target_position_deg: 720
+                duration_s: 36
+                sample_rate_hz: 10
+                max_settling_time_s: 38
+                max_steady_state_error_deg: 1
+              - name: LowSpeedReverseTwoTurns
+                type: position_ramp
+                start_position_deg: 720
+                target_position_deg: 0
+                duration_s: 36
+                sample_rate_hz: 10
+                max_settling_time_s: 38
+                max_steady_state_error_deg: 1
             """);
 
         var config = StationConfigLoader.Load(station);
@@ -203,7 +216,10 @@ public sealed class ReportAndTwinCatPreparationTests
         Assert.Equal(-1, config.Scaling.PositionDirection);
         Assert.Equal(12.5, config.Scaling.ZeroOffsetDegrees);
         Assert.True(config.Scaling.AutoZeroOnCheck);
-        Assert.Equal(2, config.Tests.Count);
+        Assert.Equal(3, config.Tests.Count);
+        Assert.Equal(["PositionStep1Deg", "LowSpeedForwardTwoTurns", "LowSpeedReverseTwoTurns"], config.Tests.Select(test => test.Name));
+        Assert.Equal("position_ramp", config.Tests[1].MotionProfile);
+        Assert.Equal(720.0, config.Tests[1].TargetPositionDegrees);
         Assert.True(config.MotionAllowed);
     }
 

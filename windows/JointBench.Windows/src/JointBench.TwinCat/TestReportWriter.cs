@@ -107,6 +107,8 @@ public sealed class TestReportWriter
         foreach (var test in result.ConfigSnapshot.Tests)
         {
             builder.AppendLine($"  - name: {test.Name}");
+            builder.AppendLine($"    type: {test.MotionProfile}");
+            builder.AppendLine($"    start_position_deg: {Format(test.StartPositionDegrees)}");
             builder.AppendLine($"    target_position_deg: {Format(test.TargetPositionDegrees)}");
             builder.AppendLine($"    duration_s: {Format(test.DurationSeconds)}");
             builder.AppendLine($"    sample_rate_hz: {Format(test.SampleRateHz)}");
