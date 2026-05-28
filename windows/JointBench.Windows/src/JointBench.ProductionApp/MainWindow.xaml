@@ -81,10 +81,10 @@
             <Border Grid.Column="0" Style="{StaticResource PanelBorder}">
                 <StackPanel>
                     <TextBlock x:Name="WorkflowHeader" Text="Workflow" FontSize="16" FontWeight="SemiBold" Foreground="#16202A" Margin="0,0,0,12" />
-                    <TextBlock x:Name="Workflow1" Text="1  Environment" FontSize="14" Foreground="#203040" Margin="0,8,0,0" />
+                    <TextBlock x:Name="Workflow1" Text="1  Station check" FontSize="14" Foreground="#203040" Margin="0,8,0,0" />
                     <TextBlock x:Name="Workflow2" Text="2  ESI import" FontSize="14" Foreground="#203040" Margin="0,14,0,0" />
                     <TextBlock x:Name="Workflow3" Text="3  Prepare TwinCAT" FontSize="14" Foreground="#203040" Margin="0,14,0,0" />
-                    <TextBlock x:Name="Workflow4" Text="4  Scan Ti5" FontSize="14" Foreground="#203040" Margin="0,14,0,0" />
+                    <TextBlock x:Name="Workflow4" Text="4  Ti5 ready" FontSize="14" Foreground="#203040" Margin="0,14,0,0" />
                     <TextBlock x:Name="Workflow5" Text="5  ADS symbols" FontSize="14" Foreground="#203040" Margin="0,14,0,0" />
                     <Separator Margin="0,18,0,18" />
                     <TextBlock x:Name="Workflow6" Text="Enable only" FontSize="14" Foreground="#6B7280" Margin="0,0,0,10" />
@@ -115,7 +115,7 @@
                             <StackPanel Orientation="Horizontal">
                                 <Button x:Name="RunPreflightButton" Content="Check Station" Click="RunPreflightButton_Click" Style="{StaticResource PrimaryButton}" />
                                 <Button x:Name="AutomationSmokeButton" Content="Automation Smoke" Click="AutomationSmokeButton_Click" Style="{StaticResource SecondaryButton}" />
-                                <Button x:Name="ScanSpikeButton" Content="Scan Ti5" Click="ScanSpikeButton_Click" Style="{StaticResource SecondaryButton}" />
+                                <Button x:Name="ScanSpikeButton" Content="Engineering Scan" Click="ScanSpikeButton_Click" Style="{StaticResource SecondaryButton}" />
                             </StackPanel>
                         </StackPanel>
                     </Border>

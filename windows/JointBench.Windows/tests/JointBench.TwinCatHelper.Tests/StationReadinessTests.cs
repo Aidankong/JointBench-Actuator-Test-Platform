@@ -118,6 +118,37 @@ public sealed class StationReadinessTests
     }
 
     [Fact]
+    public void ProductionGateAcceptsActiveConfigTi5WhenEngineeringScanIsUnavailable()
+    {
+        var report = ReadyReportWithActiveConfigFallback();
+
+        var gate = ProductionGateState.FromReadiness(report);
+
+        Assert.True(gate.EnvironmentOk);
+        Assert.True(gate.Ti5Ready);
+        Assert.True(gate.AdsOk);
+        Assert.True(gate.ReadyForMotion);
+    }
+
+    [Fact]
+    public void EngineeringScanFailureDoesNotClearProductionReadiness()
+    {
+        var gate = ProductionGateState.FromReadiness(ReadyReportWithActiveConfigFallback());
+        var failedEngineeringScan = new EtherCatScanReport(
+            false,
+            "No EtherCAT master was found.",
+            @"C:\Temp\jointbench-scan",
+            null,
+            [],
+            [],
+            Ti5Found: false);
+
+        gate = gate.WithEngineeringScan(failedEngineeringScan);
+
+        Assert.True(gate.ReadyForMotion);
+    }
+
+    [Fact]
     public void ActiveConfigProbeFindsTi5InCurrentConfigArchive()
     {
         var root = Directory.CreateTempSubdirectory("jointbench-active-config-").FullName;
@@ -175,8 +206,43 @@ public sealed class StationReadinessTests
             tests:
               - target_position_deg: 1
               - target_position_deg: 5
-            """);
+        """);
         return station;
+    }
+
+    private static StationReadinessReport ReadyReportWithActiveConfigFallback()
+    {
+        var activeConfigScan = new EtherCatScanReport(
+            false,
+            "No EtherCAT master was found.",
+            "",
+            null,
+            [],
+            [],
+            Ti5Found: false);
+        var preflight = new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]);
+        var ads = new AdsSymbolCheckReport("127.0.0.1.1.1", 851, "MAIN.stJointBench", true, []);
+        var preparation = new TwinCatPreparationReport(false, false, "No EtherCAT master was found.", activeConfigScan, null);
+        var checks = new[]
+        {
+            new CheckItem("station-config", "ok", "Station config is motion-ready."),
+            new CheckItem("preflight", "ok", "Prerequisites passed."),
+            new CheckItem("esi-auto-import", "ok", "Last ESI file imported."),
+            new CheckItem("twincat-active-config", "ok", "Active TwinCAT configuration contains Ti5.", @"C:\TwinCAT\3.1\Boot\CurrentConfig.tszip"),
+            new CheckItem("twincat-prepare", "ok", "Active TwinCAT configuration is already prepared with Ti5."),
+            new CheckItem("ti5-scan", "ok", "Ti5 found in active TwinCAT configuration."),
+            new CheckItem("ads-symbols", "ok", "ADS symbols are available.", "127.0.0.1.1.1:851 MAIN.stJointBench"),
+        };
+
+        return new StationReadinessReport(
+            DateTimeOffset.UtcNow,
+            Ready: true,
+            "Station readiness checks passed.",
+            checks,
+            preflight,
+            new EsiAutoImportReport(true, true, "Last ESI file imported.", null, @"C:\Ti5.xml"),
+            preparation,
+            ads);
     }
 
     private sealed class EsiFixture : IDisposable

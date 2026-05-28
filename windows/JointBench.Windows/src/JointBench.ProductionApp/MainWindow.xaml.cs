@@ -17,9 +17,7 @@ public partial class MainWindow : Window
     private readonly EsiAutoImportService esiAutoImportService = new();
     private readonly StationReadinessService stationReadinessService = new();
 
-    private bool preflightOk;
-    private bool ti5Found;
-    private bool adsOk;
+    private ProductionGateState productionGate = ProductionGateState.Locked;
     private string? lastReportDirectory;
 
     public MainWindow()
@@ -63,12 +61,12 @@ public partial class MainWindow : Window
         TitleText.Text = IsChinese ? "JointBench 产线测试" : "JointBench Production";
         SubtitleText.Text = IsChinese ? "Ti5 TwinCAT ADS 工位" : "Ti5 TwinCAT ADS station";
         WorkflowHeader.Text = IsChinese ? "流程" : "Workflow";
-        Workflow1.Text = IsChinese ? "1  工位检查" : "1  Station check";
+        Workflow1.Text = IsChinese ? "1  一键工位检查" : "1  Station check";
         Workflow2.Text = IsChinese ? "2  ESI 导入" : "2  ESI import";
-        Workflow3.Text = IsChinese ? "3  准备 TwinCAT" : "3  Prepare TwinCAT";
-        Workflow4.Text = IsChinese ? "4  扫描 Ti5" : "4  Scan Ti5";
+        Workflow3.Text = IsChinese ? "3  TwinCAT 准备" : "3  Prepare TwinCAT";
+        Workflow4.Text = IsChinese ? "4  Ti5 就绪" : "4  Ti5 ready";
         Workflow5.Text = IsChinese ? "5  ADS 符号" : "5  ADS symbols";
-        Workflow6.Text = "Enable only";
+        Workflow6.Text = IsChinese ? "Enable only 使能不运动" : "Enable only";
         Workflow7.Text = IsChinese ? "1deg 阶跃" : "1deg step";
         Workflow8.Text = IsChinese ? "5deg 验收" : "5deg acceptance";
         ReadinessHeader.Text = IsChinese ? "工位就绪" : "Station Readiness";
@@ -76,8 +74,11 @@ public partial class MainWindow : Window
         TestHeader.Text = IsChinese ? "产线测试" : "Production Test";
         EventHeader.Text = IsChinese ? "事件输出" : "Event Output";
         RunPreflightButton.Content = IsChinese ? "一键工位检查" : "Check Station";
-        AutomationSmokeButton.Content = IsChinese ? "自动化检查" : "Automation Smoke";
-        ScanSpikeButton.Content = IsChinese ? "扫描 Ti5" : "Scan Ti5";
+        AutomationSmokeButton.Content = IsChinese ? "自动化诊断" : "Automation Smoke";
+        ScanSpikeButton.Content = IsChinese ? "工程扫描" : "Engineering Scan";
+        ScanSpikeButton.ToolTip = IsChinese
+            ? "仅用于工程诊断；产线启动门禁以一键工位检查为准。"
+            : "Engineering diagnostic only; production readiness uses Check Station.";
         ImportEsiButton.Content = IsChinese ? "导入 ESI" : "Import ESI";
         ImportLastEsiButton.Content = IsChinese ? "导入上次 ESI" : "Import Last";
         PrepareTwinCatButton.Content = IsChinese ? "准备 TwinCAT" : "Prepare TwinCAT";
@@ -117,9 +118,7 @@ public partial class MainWindow : Window
         }
         catch (Exception exc)
         {
-            preflightOk = false;
-            ti5Found = false;
-            adsOk = false;
+            productionGate = ProductionGateState.Locked;
             PreflightSummary.Text = IsChinese ? "工位检查失败" : "Station check failed";
             UpdateBadges();
             WriteOutput($"Station readiness error: {exc.Message}");
@@ -132,12 +131,10 @@ public partial class MainWindow : Window
 
     private void ApplyReadinessReport(StationReadinessReport report)
     {
-        preflightOk = report.Preflight?.Ok == true;
-        ti5Found = report.Preparation?.ScanReport?.Ti5Found == true;
-        adsOk = report.AdsSymbols?.Ok == true;
+        productionGate = ProductionGateState.FromReadiness(report);
         PreflightSummary.Text = report.Ready
-            ? (IsChinese ? "工位就绪检查通过，仍需操作员确认安全项后才能运动" : "Station checks passed; operator safety confirmation is still required before motion")
-            : (IsChinese ? "工位检查发现问题，请查看事件输出" : "Station checks found issues; review event output");
+            ? (IsChinese ? "工位就绪检查通过，仍需操作员确认安全项后才能运动。" : "Station checks passed; operator safety confirmation is still required before motion.")
+            : (IsChinese ? "工位检查发现问题，请查看事件输出。" : "Station checks found issues; review event output.");
 
         if (report.EsiAutoImport?.InstallResult is { } installResult)
         {
@@ -148,7 +145,7 @@ public partial class MainWindow : Window
             EsiSummary.Text = report.EsiAutoImport.Message;
         }
 
-        UpdateBadges(report.Ready);
+        UpdateBadges();
     }
 
     private void WriteReadinessReport(StationReadinessReport report)
@@ -197,16 +194,20 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpdateBadges(bool stationReady = false)
+    private void UpdateBadges()
     {
-        EnvironmentBadge.Text = preflightOk ? (IsChinese ? "环境 OK" : "Environment OK") : (IsChinese ? "环境待检查" : "Environment");
-        EnvironmentBadge.Foreground = Brush(preflightOk ? "#244C2A" : "#6A4A00");
-        AdsBadge.Text = adsOk ? "ADS OK" : (IsChinese ? "ADS 待检查" : "ADS pending");
-        AdsBadge.Foreground = Brush(adsOk ? "#244C2A" : "#6A4A00");
-        MotionBadge.Text = stationReady
-            ? (IsChinese ? "就绪待确认" : "Ready gated")
+        EnvironmentBadge.Text = productionGate.EnvironmentOk
+            ? (IsChinese ? "环境 OK" : "Environment OK")
+            : (IsChinese ? "环境待检查" : "Environment");
+        EnvironmentBadge.Foreground = Brush(productionGate.EnvironmentOk ? "#244C2A" : "#6A4A00");
+
+        AdsBadge.Text = productionGate.AdsOk ? "ADS OK" : (IsChinese ? "ADS 待检查" : "ADS pending");
+        AdsBadge.Foreground = Brush(productionGate.AdsOk ? "#244C2A" : "#6A4A00");
+
+        MotionBadge.Text = productionGate.ReadyForMotion
+            ? (IsChinese ? "就绪待安全确认" : "Ready gated")
             : (IsChinese ? "运动锁定" : "Motion locked");
-        MotionBadge.Foreground = Brush(stationReady ? "#244C2A" : "#682D2D");
+        MotionBadge.Foreground = Brush(productionGate.ReadyForMotion ? "#244C2A" : "#682D2D");
     }
 
     private void ImportEsiButton_Click(object sender, RoutedEventArgs e)
@@ -269,13 +270,16 @@ public partial class MainWindow : Window
     private void ScanSpikeButton_Click(object sender, RoutedEventArgs e)
     {
         var report = etherCatScanProbe.Scan();
-        ti5Found = report.Ok && report.Ti5Found;
-        WriteOutput($"EtherCAT scan: {(report.Ok ? "OK" : "FAILED")}");
+        productionGate = productionGate.WithEngineeringScan(report);
+        UpdateBadges();
+
+        WriteOutput($"Engineering EtherCAT scan: {(report.Ok ? "OK" : "FAILED")}");
         WriteOutput($"Ti5 found: {report.Ti5Found}");
         WriteOutput($"Temp root: {report.TempRoot}");
         if (!report.Ok)
         {
             WriteOutput(report.Error);
+            WriteOutput("Engineering scan did not change production readiness. Use Check Station as the production gate.");
             return;
         }
 
@@ -299,9 +303,8 @@ public partial class MainWindow : Window
         }
 
         var report = adsSymbolValidator.Check(new AdsConnectionOptions(AmsNetIdBox.Text.Trim(), port, SymbolPrefixBox.Text.Trim()));
-        adsOk = report.Ok;
-        AdsBadge.Text = report.Ok ? "ADS OK" : (IsChinese ? "ADS 异常" : "ADS issue");
-        AdsBadge.Foreground = Brush(report.Ok ? "#244C2A" : "#682D2D");
+        productionGate = productionGate.WithAdsSymbolCheck(report);
+        UpdateBadges();
 
         WriteOutput($"ADS symbol check: {(report.Ok ? "OK" : "FAILED")}");
         WriteOutput($"Target: {report.AmsNetId}:{report.Port} {report.SymbolPrefix}");
@@ -318,7 +321,7 @@ public partial class MainWindow : Window
         {
             var answer = MessageBox.Show(
                 this,
-                IsChinese ? "激活 TwinCAT 配置可能重启运行时。确认只在工程模式下继续？" : "Activating TwinCAT may restart the runtime. Continue in engineering mode?",
+                IsChinese ? "激活 TwinCAT 配置可能重启运行时。请确认只在工程模式下继续。" : "Activating TwinCAT may restart the runtime. Continue in engineering mode?",
                 IsChinese ? "确认激活" : "Confirm Activation",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
@@ -365,23 +368,23 @@ public partial class MainWindow : Window
 
     private async void StartTestButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!productionGate.ReadyForMotion)
+        {
+            MessageBox.Show(
+                this,
+                IsChinese ? "请先完成一键工位检查，并确认工位就绪和 ADS 符号全部通过。" : "Run Check Station first and make sure station readiness and ADS symbols pass before motion.",
+                IsChinese ? "测试未就绪" : "Test Not Ready",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
         if (!SafetyConfirmed())
         {
             MessageBox.Show(
                 this,
                 IsChinese ? "请先确认急停、治具和限流电源。" : "Confirm E-stop, fixture, and current-limited power first.",
                 IsChinese ? "运动被锁定" : "Motion Locked",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-            return;
-        }
-
-        if (!preflightOk || !ti5Found || !adsOk)
-        {
-            MessageBox.Show(
-                this,
-                IsChinese ? "请先完成一键工位检查，并确保环境、Ti5 扫描和 ADS 符号检查全部通过。" : "Run the station readiness check and make sure environment, Ti5 scan, and ADS symbols all pass before motion.",
-                IsChinese ? "测试未就绪" : "Test Not Ready",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             return;
