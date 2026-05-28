@@ -55,6 +55,8 @@ public sealed class FakeAdsSymbolClient : IAdsSymbolClient
 
     public double? ForceActualPositionDegrees { get; set; }
 
+    public bool AutoOperationEnabledOnEnable { get; set; } = true;
+
     public Task ConnectAsync(AdsConnectionOptions options, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -80,8 +82,11 @@ public sealed class FakeAdsSymbolClient : IAdsSymbolClient
         }
         else if (symbol.EndsWith(".bEnable", StringComparison.OrdinalIgnoreCase))
         {
-            symbols[ReplaceSuffix(symbol, "bOperationEnabled")] = Convert.ToBoolean(value);
-            symbols[ReplaceSuffix(symbol, "bReady")] = Convert.ToBoolean(value);
+            if (AutoOperationEnabledOnEnable)
+            {
+                symbols[ReplaceSuffix(symbol, "bOperationEnabled")] = Convert.ToBoolean(value);
+                symbols[ReplaceSuffix(symbol, "bReady")] = Convert.ToBoolean(value);
+            }
         }
         else if (symbol.EndsWith(".nCommandSequence", StringComparison.OrdinalIgnoreCase))
         {
@@ -187,13 +192,21 @@ public sealed class AdsMotionAdapter
 {
     private readonly IAdsSymbolClient client;
     private readonly AdsConnectionOptions options;
+    private readonly TimeSpan enableTimeout;
+    private readonly TimeSpan enablePollInterval;
     private int commandSequence;
     private double targetPositionDegrees;
 
-    public AdsMotionAdapter(IAdsSymbolClient client, AdsConnectionOptions options)
+    public AdsMotionAdapter(
+        IAdsSymbolClient client,
+        AdsConnectionOptions options,
+        TimeSpan? enableTimeout = null,
+        TimeSpan? enablePollInterval = null)
     {
         this.client = client;
         this.options = options;
+        this.enableTimeout = enableTimeout ?? TimeSpan.FromSeconds(8);
+        this.enablePollInterval = enablePollInterval ?? TimeSpan.FromMilliseconds(20);
     }
 
     public bool OperationEnabled { get; private set; }
@@ -223,6 +236,46 @@ public sealed class AdsMotionAdapter
             "connected");
     }
 
+    public async Task<AdsRuntimeConfigurationReport> ApplyRuntimeConfigAsync(
+        SafetyLimits safety,
+        StationScaling scaling,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var root = PlcRoot(options.SymbolPrefix);
+            await client.WriteAsync($"{root}.fTi5MinPositionDeg", safety.MinPositionDegrees, cancellationToken);
+            await client.WriteAsync($"{root}.fTi5MaxPositionDeg", safety.MaxPositionDegrees, cancellationToken);
+            await client.WriteAsync($"{root}.fTi5MaxVelocityDps", safety.MaxSpeedDps, cancellationToken);
+            await client.WriteAsync($"{root}.fTi5MaxCurrentA", safety.MaxCurrentA, cancellationToken);
+            await client.WriteAsync($"{root}.fTi5MaxTemperatureC", safety.MaxTemperatureC, cancellationToken);
+            await client.WriteAsync($"{root}.fTi5MaxFollowingErrorDeg", safety.MaxFollowingErrorDegrees, cancellationToken);
+            await client.WriteAsync($"{root}.nTi5EncoderCountsPerRev", scaling.EncoderCountsPerRev, cancellationToken);
+            await client.WriteAsync($"{root}.fTi5GearRatio", scaling.GearRatio, cancellationToken);
+            await client.WriteAsync($"{root}.nTi5PositionDirection", scaling.PositionDirection, cancellationToken);
+            await client.WriteAsync($"{root}.fTi5CurrentScaleAPerUnit", scaling.CurrentScaleAPerUnit, cancellationToken);
+            await client.WriteAsync($"{root}.fTi5TemperatureScaleCPerUnit", scaling.TemperatureScaleCPerUnit, cancellationToken);
+
+            var zeroOffset = scaling.ZeroOffsetDegrees;
+            if (scaling.AutoZeroOnCheck)
+            {
+                var currentPosition = Convert.ToDouble(await ReadAsync("fActualPositionDeg", typeof(double), cancellationToken));
+                zeroOffset -= currentPosition;
+            }
+
+            await client.WriteAsync($"{root}.fTi5ZeroOffsetDeg", zeroOffset, cancellationToken);
+            await PulseResetFaultAsync(cancellationToken);
+            var detail = scaling.AutoZeroOnCheck
+                ? $"auto-zero applied; zero_offset_deg={zeroOffset:F6}"
+                : $"zero_offset_deg={zeroOffset:F6}";
+            return AdsRuntimeConfigurationReport.Applied(detail);
+        }
+        catch (Exception exc)
+        {
+            return AdsRuntimeConfigurationReport.Failed(FormatRuntimeConfigFailure(exc));
+        }
+    }
+
     public async Task SetEnableAsync(bool enabled, CancellationToken cancellationToken)
     {
         await BumpCommandSequenceAsync(cancellationToken);
@@ -230,20 +283,22 @@ public sealed class AdsMotionAdapter
         await WriteAsync("bEnable", enabled, cancellationToken);
         if (enabled)
         {
-            var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
+            ActuatorState? lastState = null;
+            var deadline = DateTimeOffset.UtcNow + enableTimeout;
             while (DateTimeOffset.UtcNow < deadline)
             {
                 await BumpCommandSequenceAsync(cancellationToken);
+                lastState = await ReadCurrentStateAsync(0.0, cancellationToken);
                 if (Convert.ToBoolean(await ReadAsync("bOperationEnabled", typeof(bool), cancellationToken)))
                 {
                     OperationEnabled = true;
                     return;
                 }
 
-                await Task.Delay(20, cancellationToken);
+                await Task.Delay(enablePollInterval, cancellationToken);
             }
 
-            throw new TimeoutException("Timed out waiting for bOperationEnabled=True.");
+            throw new TimeoutException($"Timed out waiting for bOperationEnabled=True. Last state: {FormatState(lastState)}");
         }
 
         OperationEnabled = false;
@@ -310,5 +365,61 @@ public sealed class AdsMotionAdapter
         await WriteAsync("nCommandSequence", commandSequence, cancellationToken);
     }
 
+    private async Task PulseResetFaultAsync(CancellationToken cancellationToken)
+    {
+        await BumpCommandSequenceAsync(cancellationToken);
+        await WriteAsync("bResetFault", true, cancellationToken);
+        await Task.Delay(60, cancellationToken);
+        await BumpCommandSequenceAsync(cancellationToken);
+        await WriteAsync("bResetFault", false, cancellationToken);
+    }
+
+    private async Task<ActuatorState> ReadCurrentStateAsync(double timestampSeconds, CancellationToken cancellationToken) =>
+        new(
+            timestampSeconds,
+            targetPositionDegrees,
+            Convert.ToDouble(await ReadAsync("fActualPositionDeg", typeof(double), cancellationToken)),
+            Convert.ToDouble(await ReadAsync("fActualVelocityDps", typeof(double), cancellationToken)),
+            Convert.ToDouble(await ReadAsync("fCurrentA", typeof(double), cancellationToken)),
+            24.0,
+            Convert.ToDouble(await ReadAsync("fTemperatureC", typeof(double), cancellationToken)),
+            Convert.ToInt32(await ReadAsync("nFaultCode", typeof(int), cancellationToken)) != 0
+                ? Convert.ToInt32(await ReadAsync("nFaultCode", typeof(int), cancellationToken))
+                : Convert.ToInt32(await ReadAsync("nErrorCode", typeof(int), cancellationToken)),
+            Convert.ToBoolean(await ReadAsync("bOperationEnabled", typeof(bool), cancellationToken)),
+            Statusword: Convert.ToInt32(await ReadAsync("nStatusword", typeof(int), cancellationToken)),
+            Controlword: Convert.ToInt32(await ReadAsync("nControlword", typeof(int), cancellationToken)),
+            CommandSequence: commandSequence,
+            WatchdogOk: Convert.ToBoolean(await ReadAsync("bWatchdogOk", typeof(bool), cancellationToken)),
+            FollowingErrorDegrees: Convert.ToDouble(await ReadAsync("fFollowingErrorDeg", typeof(double), cancellationToken)));
+
+    private static string FormatState(ActuatorState? state)
+    {
+        if (state is null)
+        {
+            return "unavailable";
+        }
+
+        return $"statusword=0x{state.Statusword ?? 0:X4}, controlword=0x{state.Controlword ?? 0:X4}, error={state.FaultCode}, watchdog={state.WatchdogOk}, enabled={state.Enabled}, position={state.ActualPositionDegrees:F3}deg";
+    }
+
+    private static string FormatRuntimeConfigFailure(Exception exc)
+    {
+        var message = exc.Message;
+        if (message.Contains("Symbol could not be found", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("0x710", StringComparison.OrdinalIgnoreCase))
+        {
+            return "PLC runtime config symbols are missing. Run Prepare TwinCAT with Activate once to deploy the latest JointBench PLC template.";
+        }
+
+        return message;
+    }
+
     private string Symbol(string key) => $"{options.SymbolPrefix}.{key}";
+
+    private static string PlcRoot(string symbolPrefix)
+    {
+        var dot = symbolPrefix.IndexOf('.');
+        return dot > 0 ? symbolPrefix[..dot] : "MAIN";
+    }
 }

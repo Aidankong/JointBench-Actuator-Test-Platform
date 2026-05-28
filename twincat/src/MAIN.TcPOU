@@ -21,6 +21,19 @@ VAR
     nTi5Controlword AT %Q* : UINT;
     nTi5ModeOfOperation AT %Q* : SINT;
     nTi5TargetPosition AT %Q* : DINT;
+    (* Runtime configuration written by the C# station software from the local station YAML. *)
+    fTi5MinPositionDeg : LREAL := -6.0;
+    fTi5MaxPositionDeg : LREAL := 6.0;
+    fTi5MaxVelocityDps : LREAL := 30.0;
+    fTi5MaxCurrentA : LREAL := 3.0;
+    fTi5MaxTemperatureC : LREAL := 60.0;
+    fTi5MaxFollowingErrorDeg : LREAL := 2.0;
+    nTi5EncoderCountsPerRev : DINT := 524288;
+    fTi5GearRatio : LREAL := 1.0;
+    nTi5PositionDirection : DINT := 1;
+    fTi5ZeroOffsetDeg : LREAL := 0.0;
+    fTi5CurrentScaleAPerUnit : LREAL := 1.0;
+    fTi5TemperatureScaleCPerUnit : LREAL := 1.0;
     stTi5In : ST_Ti5CiA402PdoInput;
     stTi5Out : ST_Ti5CiA402PdoOutput;
     fbJointBenchAxis : FB_JointBenchAxis;
@@ -38,7 +51,19 @@ stTi5In.nTemperatureRaw := nTi5TemperatureRaw;
 fbJointBenchAxis(
     stIf := stJointBench,
     stDriveIn := stTi5In,
-    stDriveOut := stTi5Out
+    stDriveOut := stTi5Out,
+    fMinPositionDeg := fTi5MinPositionDeg,
+    fMaxPositionDeg := fTi5MaxPositionDeg,
+    fMaxVelocityDps := fTi5MaxVelocityDps,
+    fMaxCurrentA := fTi5MaxCurrentA,
+    fMaxTemperatureC := fTi5MaxTemperatureC,
+    fMaxFollowingErrorDeg := fTi5MaxFollowingErrorDeg,
+    nEncoderCountsPerRev := nTi5EncoderCountsPerRev,
+    fGearRatio := fTi5GearRatio,
+    nPositionDirection := nTi5PositionDirection,
+    fZeroOffsetDeg := fTi5ZeroOffsetDeg,
+    fCurrentScaleAPerUnit := fTi5CurrentScaleAPerUnit,
+    fTemperatureScaleCPerUnit := fTi5TemperatureScaleCPerUnit
 );
 
 nTi5Controlword := stTi5Out.nControlword;

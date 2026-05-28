@@ -97,6 +97,12 @@ public sealed class TestReportWriter
         builder.AppendLine($"  max_current_a: {Format(result.ConfigSnapshot.Safety.MaxCurrentA)}");
         builder.AppendLine($"  max_temperature_c: {Format(result.ConfigSnapshot.Safety.MaxTemperatureC)}");
         builder.AppendLine($"  max_following_error_deg: {Format(result.ConfigSnapshot.Safety.MaxFollowingErrorDegrees)}");
+        builder.AppendLine("scaling:");
+        builder.AppendLine($"  encoder_counts_per_rev: {result.ConfigSnapshot.Scaling.EncoderCountsPerRev}");
+        builder.AppendLine($"  gear_ratio: {Format(result.ConfigSnapshot.Scaling.GearRatio)}");
+        builder.AppendLine($"  position_direction: {result.ConfigSnapshot.Scaling.PositionDirection}");
+        builder.AppendLine($"  zero_offset_deg: {Format(result.ConfigSnapshot.Scaling.ZeroOffsetDegrees)}");
+        builder.AppendLine($"  auto_zero_on_check: {result.ConfigSnapshot.Scaling.AutoZeroOnCheck.ToString().ToLowerInvariant()}");
         builder.AppendLine("tests:");
         foreach (var test in result.ConfigSnapshot.Tests)
         {

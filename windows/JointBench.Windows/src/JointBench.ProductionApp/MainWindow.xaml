@@ -112,6 +112,7 @@
                         <StackPanel>
                             <TextBlock x:Name="ReadinessHeader" Text="Station Readiness" FontSize="16" FontWeight="SemiBold" Foreground="#16202A" />
                             <TextBlock x:Name="PreflightSummary" Text="Not checked" FontSize="13" Foreground="#5D6B7C" Margin="0,4,0,12" />
+                            <ProgressBar x:Name="ReadinessProgressBar" Height="6" Margin="0,0,0,12" IsIndeterminate="True" Visibility="Collapsed" />
                             <StackPanel Orientation="Horizontal">
                                 <Button x:Name="RunPreflightButton" Content="Check Station" Click="RunPreflightButton_Click" Style="{StaticResource PrimaryButton}" />
                                 <Button x:Name="AutomationSmokeButton" Content="Automation Smoke" Click="AutomationSmokeButton_Click" Style="{StaticResource SecondaryButton}" />

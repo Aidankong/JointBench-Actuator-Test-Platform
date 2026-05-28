@@ -96,6 +96,26 @@ public sealed class ProductionMotionTests
     }
 
     [Fact]
+    public async Task EnableTimeoutIncludesLatestDriveState()
+    {
+        var io = new FakeAdsSymbolClient { AutoOperationEnabledOnEnable = false };
+        await io.WriteAsync("MAIN.stJointBench.nStatusword", 0x0040, CancellationToken.None);
+        await io.WriteAsync("MAIN.stJointBench.nControlword", 0x0006, CancellationToken.None);
+        await io.WriteAsync("MAIN.stJointBench.nErrorCode", 0, CancellationToken.None);
+        var adapter = new AdsMotionAdapter(
+            io,
+            AdsConnectionOptions.LocalDefault(),
+            enableTimeout: TimeSpan.FromMilliseconds(40),
+            enablePollInterval: TimeSpan.FromMilliseconds(1));
+
+        var exc = await Assert.ThrowsAsync<TimeoutException>(() => adapter.SetEnableAsync(true, CancellationToken.None));
+
+        Assert.Contains("statusword=0x0040", exc.Message);
+        Assert.Contains("controlword=0x0006", exc.Message);
+        Assert.Contains("error=0", exc.Message);
+    }
+
+    [Fact]
     public async Task SequenceAbortsWhenNegativeCurrentMagnitudeExceedsLimit()
     {
         var io = new FakeAdsSymbolClient();

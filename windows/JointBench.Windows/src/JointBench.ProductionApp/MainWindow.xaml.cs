@@ -105,6 +105,7 @@ public partial class MainWindow : Window
     {
         var station = FullStationPath();
         SetBusy(true);
+        ReadinessProgressBar.Visibility = Visibility.Visible;
         PreflightSummary.Text = autoStarted
             ? (IsChinese ? "软件启动，正在自动检查工位..." : "Application started; checking station...")
             : (IsChinese ? "正在执行一键工位检查..." : "Running station readiness check...");
@@ -125,6 +126,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            ReadinessProgressBar.Visibility = Visibility.Collapsed;
             SetBusy(false);
         }
     }
@@ -407,7 +409,10 @@ public partial class MainWindow : Window
                     CurrentLanguage,
                     config.Ads,
                     config.Safety,
-                    config.Tests),
+                    config.Tests)
+                {
+                    Scaling = config.Scaling,
+                },
                 CancellationToken.None);
             lastReportDirectory = result.OutputDirectory;
             LiveStatusText.Text = $"{result.OverallResult}: {result.TestId}";

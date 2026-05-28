@@ -22,7 +22,8 @@ public sealed class ReportAndTwinCatPreparationTests
             new TestConfigSnapshot(
                 AdsConnectionOptions.LocalDefault(),
                 SafetyLimits.DefaultTi5(),
-                [TestConfig.ForTarget(1.0)]),
+                [TestConfig.ForTarget(1.0)],
+                StationScaling.DefaultTi5()),
             []);
 
         var written = writer.Write(result);
@@ -52,7 +53,8 @@ public sealed class ReportAndTwinCatPreparationTests
             new TestConfigSnapshot(
                 AdsConnectionOptions.LocalDefault(),
                 SafetyLimits.DefaultTi5(),
-                [TestConfig.ForTarget(1.0)]),
+                [TestConfig.ForTarget(1.0)],
+                StationScaling.DefaultTi5()),
             []);
 
         var written = writer.Write(result);
@@ -164,6 +166,14 @@ public sealed class ReportAndTwinCatPreparationTests
               revision_number: 0x00010005
             ads:
               symbol_prefix: MAIN.stJointBench
+            scaling:
+              encoder_counts_per_rev: 524288
+              gear_ratio: 2.0
+              position_direction: -1
+              zero_offset_deg: 12.5
+              current_scale_a_per_unit: 0.01
+              temperature_scale_c_per_unit: 0.5
+              auto_zero_on_check: true
             """);
         File.WriteAllText(Path.Combine(station, "safety.yaml"), """
             limits:
@@ -189,6 +199,10 @@ public sealed class ReportAndTwinCatPreparationTests
 
         Assert.Equal("127.0.0.1.1.1", config.Ads.AmsNetId);
         Assert.Equal("MAIN.stJointBench", config.Ads.SymbolPrefix);
+        Assert.Equal(2.0, config.Scaling.GearRatio);
+        Assert.Equal(-1, config.Scaling.PositionDirection);
+        Assert.Equal(12.5, config.Scaling.ZeroOffsetDegrees);
+        Assert.True(config.Scaling.AutoZeroOnCheck);
         Assert.Equal(2, config.Tests.Count);
         Assert.True(config.MotionAllowed);
     }
@@ -348,6 +362,36 @@ public sealed class ReportAndTwinCatPreparationTests
     }
 
     [Fact]
+    public void TwinCatPreparationActivateRefreshesLatestProjectWhenOnlineScanUnavailable()
+    {
+        var station = CreateMinimalStation();
+        var preparer = new CapturingProjectPreparer(new TwinCatProjectProbeReport(
+            true,
+            string.Empty,
+            @"C:\Temp\jointbench",
+            "JointBenchProjectProbe",
+            "JointBenchPlc",
+            ["MAIN.TcPOU"],
+            true,
+            null,
+            ["existing links preserved"],
+            ActivationRequested: true,
+            Activated: true));
+        var service = new TwinCatPreparationService(
+            scanner: _ => new EtherCatScanReport(false, "No EtherCAT master was found.", "", null, [], [], Ti5Found: false),
+            preflight: () => new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]),
+            projectPreparer: preparer,
+            repositoryRoot: @"C:\Repo");
+
+        var report = service.Prepare(new TwinCatPreparationRequest(station, Activate: true));
+
+        Assert.True(report.Ok);
+        Assert.True(report.Activated);
+        Assert.NotNull(preparer.RefreshRequest);
+        Assert.Null(preparer.Request);
+    }
+
+    [Fact]
     public void TwinCatRuntimeDiagnosticsExtractsLicenseViolations()
     {
         var errors = TwinCatRuntimeDiagnostics.ExtractStartupErrors(
@@ -449,9 +493,17 @@ public sealed class ReportAndTwinCatPreparationTests
 
         public TwinCatProjectPreparationRequest? Request { get; private set; }
 
+        public TwinCatProjectPreparationRequest? RefreshRequest { get; private set; }
+
         public TwinCatProjectProbeReport Prepare(TwinCatProjectPreparationRequest request)
         {
             Request = request;
+            return report;
+        }
+
+        public TwinCatProjectProbeReport RefreshLatest(TwinCatProjectPreparationRequest request)
+        {
+            RefreshRequest = request;
             return report;
         }
     }

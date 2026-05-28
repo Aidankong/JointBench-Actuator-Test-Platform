@@ -14,7 +14,8 @@ public sealed record SafetyLimits(
     double MaxCurrentA,
     double MaxTemperatureC,
     double MaxFollowingErrorDegrees,
-    int CommunicationTimeoutMs = 500)
+    int CommunicationTimeoutMs = 500,
+    double MaxSpeedDps = 30.0)
 {
     public static SafetyLimits DefaultTi5() => new(-6.0, 6.0, 3.0, 60.0, 2.0);
 }
@@ -170,7 +171,8 @@ public sealed record StageResult(string StageName, string Result, IReadOnlyList<
 public sealed record TestConfigSnapshot(
     AdsConnectionOptions Ads,
     SafetyLimits Safety,
-    IReadOnlyList<TestConfig> Tests);
+    IReadOnlyList<TestConfig> Tests,
+    StationScaling Scaling);
 
 public sealed record ProductionSequenceRequest(
     string OutputRoot,
@@ -179,6 +181,8 @@ public sealed record ProductionSequenceRequest(
     SafetyLimits Safety,
     IReadOnlyList<TestConfig> Tests)
 {
+    public StationScaling Scaling { get; init; } = StationScaling.DefaultTi5();
+
     public static ProductionSequenceRequest ForDefaultAcceptance(string outputRoot, ReportLanguage language) =>
         new(
             outputRoot,

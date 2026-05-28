@@ -185,7 +185,10 @@ public sealed class HelperApp
             language,
             station.Ads,
             station.Safety,
-            station.Tests);
+            station.Tests)
+        {
+            Scaling = station.Scaling,
+        };
         var result = runner.RunAsync(request, CancellationToken.None).GetAwaiter().GetResult();
         Write(result, commandLine.HasFlag("json"));
         return result.OverallResult == "PASS" ? 0 : 2;

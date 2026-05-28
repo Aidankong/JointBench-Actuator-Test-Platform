@@ -110,14 +110,17 @@ public sealed record StationReadinessReport(
     PreflightReport? Preflight,
     EsiAutoImportReport? EsiAutoImport,
     TwinCatPreparationReport? Preparation,
-    AdsSymbolCheckReport? AdsSymbols);
+    AdsSymbolCheckReport? AdsSymbols,
+    AdsRuntimeStateReport? RuntimeState = null);
 
 public sealed class StationReadinessService
 {
     private readonly Func<PreflightReport> preflight;
     private readonly Func<EsiAutoImportReport> autoImportEsi;
     private readonly Func<TwinCatPreparationRequest, TwinCatPreparationReport> prepareTwinCat;
+    private readonly Func<StationConfig, AdsRuntimeConfigurationReport> applyAdsRuntimeConfig;
     private readonly Func<AdsConnectionOptions, AdsSymbolCheckReport> checkAdsSymbols;
+    private readonly Func<AdsConnectionOptions, AdsRuntimeStateReport> checkAdsRuntimeState;
     private readonly Func<ActiveTwinCatConfigReport> inspectActiveConfig;
 
     public StationReadinessService()
@@ -126,6 +129,8 @@ public sealed class StationReadinessService
             () => new EsiAutoImportService().ImportLastUsed(),
             request => new TwinCatPreparationService().Prepare(request),
             options => new AdsSymbolValidator().Check(options),
+            config => new AdsRuntimeConfigurator().ApplyAsync(config, CancellationToken.None).GetAwaiter().GetResult(),
+            options => new AdsRuntimeStateProbe().Check(options),
             () => TwinCatActiveConfigProbe.Inspect())
     {
     }
@@ -135,12 +140,16 @@ public sealed class StationReadinessService
         Func<EsiAutoImportReport> autoImportEsi,
         Func<TwinCatPreparationRequest, TwinCatPreparationReport> prepareTwinCat,
         Func<AdsConnectionOptions, AdsSymbolCheckReport> checkAdsSymbols,
+        Func<StationConfig, AdsRuntimeConfigurationReport>? applyAdsRuntimeConfig = null,
+        Func<AdsConnectionOptions, AdsRuntimeStateReport>? checkAdsRuntimeState = null,
         Func<ActiveTwinCatConfigReport>? inspectActiveConfig = null)
     {
         this.preflight = preflight;
         this.autoImportEsi = autoImportEsi;
         this.prepareTwinCat = prepareTwinCat;
+        this.applyAdsRuntimeConfig = applyAdsRuntimeConfig ?? (config => new AdsRuntimeConfigurator().ApplyAsync(config, CancellationToken.None).GetAwaiter().GetResult());
         this.checkAdsSymbols = checkAdsSymbols;
+        this.checkAdsRuntimeState = checkAdsRuntimeState ?? (options => new AdsRuntimeStateProbe().Check(options));
         this.inspectActiveConfig = inspectActiveConfig ?? (() => TwinCatActiveConfigProbe.Inspect());
     }
 
@@ -151,6 +160,8 @@ public sealed class StationReadinessService
         EsiAutoImportReport? esiReport = null;
         TwinCatPreparationReport? preparationReport = null;
         AdsSymbolCheckReport? adsReport = null;
+        AdsRuntimeConfigurationReport? runtimeConfigReport = null;
+        AdsRuntimeStateReport? runtimeStateReport = null;
         ActiveTwinCatConfigReport? activeConfigReport = null;
 
         StationConfig config;
@@ -221,7 +232,41 @@ public sealed class StationReadinessService
             checks.Add(new CheckItem("ads-symbols", "error", "ADS symbol check failed.", exc.Message));
         }
 
-        return Finish(checks, preflightReport, esiReport, preparationReport, adsReport);
+        if (adsReport?.Ok == true)
+        {
+            try
+            {
+                runtimeConfigReport = applyAdsRuntimeConfig(config);
+                checks.Add(new CheckItem(
+                    "runtime-config",
+                    runtimeConfigReport.Ok ? "ok" : "error",
+                    runtimeConfigReport.Message,
+                    runtimeConfigReport.Detail));
+            }
+            catch (Exception exc)
+            {
+                checks.Add(new CheckItem("runtime-config", "error", "PLC runtime configuration failed.", exc.Message));
+            }
+        }
+
+        if (adsReport?.Ok == true && runtimeConfigReport?.Ok == true)
+        {
+            try
+            {
+                runtimeStateReport = checkAdsRuntimeState(config.Ads);
+                checks.Add(new CheckItem(
+                    "drive-state",
+                    runtimeStateReport.Ok ? "ok" : "error",
+                    runtimeStateReport.Message,
+                    runtimeStateReport.Detail));
+            }
+            catch (Exception exc)
+            {
+                checks.Add(new CheckItem("drive-state", "error", "Ti5 runtime state check failed.", exc.Message));
+            }
+        }
+
+        return Finish(checks, preflightReport, esiReport, preparationReport, adsReport, runtimeStateReport);
     }
 
     private static StationReadinessReport Finish(
@@ -229,10 +274,11 @@ public sealed class StationReadinessService
         PreflightReport? preflightReport,
         EsiAutoImportReport? esiReport,
         TwinCatPreparationReport? preparationReport,
-        AdsSymbolCheckReport? adsReport)
+        AdsSymbolCheckReport? adsReport,
+        AdsRuntimeStateReport? runtimeStateReport = null)
     {
         var ready = checks.All(check => !check.IsError);
         var summary = ready ? "Station readiness checks passed." : "Station readiness checks found issues.";
-        return new StationReadinessReport(DateTimeOffset.UtcNow, ready, summary, checks, preflightReport, esiReport, preparationReport, adsReport);
+        return new StationReadinessReport(DateTimeOffset.UtcNow, ready, summary, checks, preflightReport, esiReport, preparationReport, adsReport, runtimeStateReport);
     }
 }

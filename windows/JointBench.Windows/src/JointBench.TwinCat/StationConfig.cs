@@ -6,6 +6,7 @@ namespace JointBench.TwinCat;
 public sealed record StationConfig(
     AdsConnectionOptions Ads,
     SafetyLimits Safety,
+    StationScaling Scaling,
     IReadOnlyList<TestConfig> Tests,
     string SymbolPrefix,
     int VendorId,
@@ -18,6 +19,18 @@ public sealed record StationConfig(
         Safety.MaxPositionDegrees >= 5.0 &&
         Tests.Any(test => Math.Abs(test.TargetPositionDegrees - 1.0) < 1e-9) &&
         Tests.Any(test => Math.Abs(test.TargetPositionDegrees - 5.0) < 1e-9);
+}
+
+public sealed record StationScaling(
+    int EncoderCountsPerRev,
+    double GearRatio,
+    int PositionDirection,
+    double ZeroOffsetDegrees,
+    double CurrentScaleAPerUnit,
+    double TemperatureScaleCPerUnit,
+    bool AutoZeroOnCheck)
+{
+    public static StationScaling DefaultTi5() => new(524288, 1.0, 1, 0.0, 1.0, 1.0, false);
 }
 
 public static class StationConfigLoader
@@ -43,6 +56,7 @@ public static class StationConfigLoader
         var adsNode = Map(bus, "ads");
         var deviceNode = Map(device, "device");
         var deviceAdsNode = Map(device, "ads");
+        var scalingNode = Map(device, "scaling");
         var limitsNode = Map(safety, "limits");
         var ads = new AdsConnectionOptions(
             String(adsNode, "ams_net_id", "127.0.0.1.1.1"),
@@ -54,12 +68,22 @@ public static class StationConfigLoader
             Double(limitsNode, "max_current_a", 3.0),
             Double(limitsNode, "max_temperature_c", 60.0),
             Double(limitsNode, "max_following_error_deg", 2.0),
-            Int(limitsNode, "communication_timeout_ms", 500));
+            Int(limitsNode, "communication_timeout_ms", 500),
+            Double(limitsNode, "max_speed_dps", 30.0));
         var testConfigs = ReadTests(root.FullName, tests, safetyLimits);
+        var scaling = new StationScaling(
+            Int(scalingNode, "encoder_counts_per_rev", 524288),
+            Double(scalingNode, "gear_ratio", 1.0),
+            Int(scalingNode, "position_direction", 1),
+            Double(scalingNode, "zero_offset_deg", 0.0),
+            Double(scalingNode, "current_scale_a_per_unit", 1.0),
+            Double(scalingNode, "temperature_scale_c_per_unit", 1.0),
+            Bool(scalingNode, "auto_zero_on_check", false));
 
         return new StationConfig(
             ads,
             safetyLimits,
+            scaling,
             testConfigs,
             ads.SymbolPrefix,
             Int(deviceNode, "vendor_id", 0x00522227),
@@ -166,4 +190,14 @@ public static class StationConfigLoader
 
     private static double Double(IReadOnlyDictionary<object, object?> map, string key, double fallback) =>
         map.TryGetValue(key, out var value) && value is not null ? Convert.ToDouble(value) : fallback;
+
+    private static bool Bool(IReadOnlyDictionary<object, object?> map, string key, bool fallback)
+    {
+        if (!map.TryGetValue(key, out var value) || value is null)
+        {
+            return fallback;
+        }
+
+        return value is bool boolValue ? boolValue : Convert.ToBoolean(value);
+    }
 }

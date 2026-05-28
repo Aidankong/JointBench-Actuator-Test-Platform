@@ -82,7 +82,9 @@ public sealed class StationReadinessTests
             preflight: () => new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]),
             autoImportEsi: () => new EsiAutoImportReport(false, true, "No last ESI file has been selected.", null, null),
             prepareTwinCat: _ => new TwinCatPreparationReport(true, false, "dry run", scan, linkPlan),
-            checkAdsSymbols: options => new AdsSymbolCheckReport(options.AmsNetId, options.Port, options.SymbolPrefix, true, []));
+            applyAdsRuntimeConfig: _ => AdsRuntimeConfigurationReport.Applied("ok"),
+            checkAdsSymbols: options => new AdsSymbolCheckReport(options.AmsNetId, options.Port, options.SymbolPrefix, true, []),
+            checkAdsRuntimeState: options => AdsRuntimeStateReport.Healthy(options));
 
         var report = service.Check(station);
 
@@ -107,7 +109,9 @@ public sealed class StationReadinessTests
             preflight: () => new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]),
             autoImportEsi: () => new EsiAutoImportReport(false, true, "No last ESI file has been selected.", null, null),
             prepareTwinCat: _ => new TwinCatPreparationReport(false, false, "No EtherCAT master was found.", scan, null),
+            applyAdsRuntimeConfig: _ => AdsRuntimeConfigurationReport.Applied("ok"),
             checkAdsSymbols: options => new AdsSymbolCheckReport(options.AmsNetId, options.Port, options.SymbolPrefix, true, []),
+            checkAdsRuntimeState: options => AdsRuntimeStateReport.Healthy(options),
             inspectActiveConfig: () => new ActiveTwinCatConfigReport(true, true, "Active TwinCAT configuration contains Ti5.", @"C:\TwinCAT\3.1\Boot\CurrentConfig.tszip"));
 
         var report = service.Check(station);
@@ -115,6 +119,69 @@ public sealed class StationReadinessTests
         Assert.True(report.Ready);
         Assert.Contains(report.Checks, check => check.Name == "twincat-active-config" && check.Status == "ok");
         Assert.Contains(report.Checks, check => check.Name == "ti5-scan" && check.Status == "ok");
+    }
+
+    [Fact]
+    public void StationReadinessFailsWhenRuntimeStatuswordIsZero()
+    {
+        var station = CreateStation();
+        var scan = new EtherCatScanReport(false, "No EtherCAT master was found.", "", null, [], [], Ti5Found: false);
+        var service = new StationReadinessService(
+            preflight: () => new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]),
+            autoImportEsi: () => new EsiAutoImportReport(false, true, "No last ESI file has been selected.", null, null),
+            prepareTwinCat: _ => new TwinCatPreparationReport(false, false, "No EtherCAT master was found.", scan, null),
+            applyAdsRuntimeConfig: _ => AdsRuntimeConfigurationReport.Applied("ok"),
+            checkAdsSymbols: options => new AdsSymbolCheckReport(options.AmsNetId, options.Port, options.SymbolPrefix, true, []),
+            checkAdsRuntimeState: options => AdsRuntimeStateReport.FromState(
+                options,
+                new ActuatorState(
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    24.0,
+                    0.0,
+                    Statusword: 0,
+                    Controlword: 0,
+                    WatchdogOk: true,
+                    FollowingErrorDegrees: 0.0)),
+            inspectActiveConfig: () => new ActiveTwinCatConfigReport(true, true, "Active TwinCAT configuration contains Ti5.", @"C:\TwinCAT\3.1\Boot\CurrentConfig.tszip"));
+
+        var report = service.Check(station);
+
+        Assert.False(report.Ready);
+        Assert.Contains(report.Checks, check => check.Name == "drive-state" && check.Status == "error");
+    }
+
+    [Fact]
+    public void StationReadinessAppliesRuntimeConfigBeforeDriveStateCheck()
+    {
+        var station = CreateStation();
+        var scan = new EtherCatScanReport(false, "No EtherCAT master was found.", "", null, [], [], Ti5Found: false);
+        var calls = new List<string>();
+        var service = new StationReadinessService(
+            preflight: () => new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]),
+            autoImportEsi: () => new EsiAutoImportReport(false, true, "No last ESI file has been selected.", null, null),
+            prepareTwinCat: _ => new TwinCatPreparationReport(false, false, "No EtherCAT master was found.", scan, null),
+            applyAdsRuntimeConfig: _ =>
+            {
+                calls.Add("config");
+                return AdsRuntimeConfigurationReport.Applied("runtime config applied");
+            },
+            checkAdsSymbols: options => new AdsSymbolCheckReport(options.AmsNetId, options.Port, options.SymbolPrefix, true, []),
+            checkAdsRuntimeState: options =>
+            {
+                calls.Add("state");
+                return AdsRuntimeStateReport.Healthy(options);
+            },
+            inspectActiveConfig: () => new ActiveTwinCatConfigReport(true, true, "Active TwinCAT configuration contains Ti5.", @"C:\TwinCAT\3.1\Boot\CurrentConfig.tszip"));
+
+        var report = service.Check(station);
+
+        Assert.True(report.Ready);
+        Assert.Equal(["config", "state"], calls);
+        Assert.Contains(report.Checks, check => check.Name == "runtime-config" && check.Status == "ok");
     }
 
     [Fact]

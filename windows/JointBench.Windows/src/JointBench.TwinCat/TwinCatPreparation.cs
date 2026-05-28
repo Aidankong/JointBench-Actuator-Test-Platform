@@ -190,6 +190,32 @@ public sealed class TwinCatPreparationService
         var scan = scanner(request.ProgId);
         if (!scan.Ok || !scan.Ti5Found)
         {
+            if (request.Activate)
+            {
+                var refreshed = projectPreparer.RefreshLatest(new TwinCatProjectPreparationRequest(
+                    repositoryRoot,
+                    request.ProgId,
+                    OutputRoot: null,
+                    Activate: true));
+                return refreshed.Ok
+                    ? new TwinCatPreparationReport(
+                        true,
+                        refreshed.Activated,
+                        refreshed.Activated
+                            ? "Latest generated TwinCAT project refreshed with current PLC templates, existing PDO links preserved, configuration activated, TwinCAT restarted, and PLC runtime started."
+                            : "Latest generated TwinCAT project refreshed with current PLC templates, but activation was not reported.",
+                        scan,
+                        refreshed.LinkPlan,
+                        refreshed)
+                    : new TwinCatPreparationReport(
+                        false,
+                        false,
+                        $"Online scan failed and latest project refresh failed: {refreshed.Error}",
+                        scan,
+                        null,
+                        refreshed);
+            }
+
             return new TwinCatPreparationReport(false, false, scan.Error.Length > 0 ? scan.Error : "Ti5 slave was not found.", scan, null);
         }
 

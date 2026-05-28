@@ -27,6 +27,13 @@ public sealed class ProductionTestSequenceRunner
             Event($"Test {testId} initialized.");
             await adapter.ConnectAsync(cancellationToken);
             Event("ADS adapter connected.");
+            var runtimeConfig = await adapter.ApplyRuntimeConfigAsync(request.Safety, request.Scaling, cancellationToken);
+            Event($"{runtimeConfig.Message} {runtimeConfig.Detail}");
+            if (!runtimeConfig.Ok)
+            {
+                throw new InvalidOperationException($"{runtimeConfig.Message} {runtimeConfig.Detail}");
+            }
+
             var device = await adapter.ReadDeviceInfoAsync(cancellationToken);
             Event($"Device info read: {device.DeviceId}.");
 
@@ -138,7 +145,7 @@ public sealed class ProductionTestSequenceRunner
             device,
             stages,
             samples,
-            new TestConfigSnapshot(request.Ads, request.Safety, request.Tests),
+            new TestConfigSnapshot(request.Ads, request.Safety, request.Tests, request.Scaling),
             events);
         reportWriter.Write(result);
         return result;

@@ -60,6 +60,8 @@ public sealed record TwinCatProjectPreparationRequest(
 public interface ITwinCatProjectPreparer
 {
     TwinCatProjectProbeReport Prepare(TwinCatProjectPreparationRequest request);
+
+    TwinCatProjectProbeReport RefreshLatest(TwinCatProjectPreparationRequest request);
 }
 
 public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
@@ -68,6 +70,28 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
 
     public TwinCatProjectProbeReport Prepare(TwinCatProjectPreparationRequest request) =>
         CreateProjectWithPlcTemplates(request.RepositoryRoot, request.ProgId, request.OutputRoot, request.Activate);
+
+    public TwinCatProjectProbeReport RefreshLatest(TwinCatProjectPreparationRequest request)
+    {
+        var latestRoot = FindLatestGeneratedProjectRoot();
+        if (latestRoot is null)
+        {
+            return new TwinCatProjectProbeReport(
+                false,
+                "No previous JointBench TwinCAT project was found to refresh. Run Prepare TwinCAT when online scan is available.",
+                request.OutputRoot ?? string.Empty,
+                "JointBenchProjectProbe",
+                "JointBenchPlc",
+                [],
+                false,
+                null,
+                [],
+                request.Activate,
+                false);
+        }
+
+        return RefreshExistingProjectWithPlcTemplates(latestRoot, request.RepositoryRoot, request.ProgId, request.Activate);
+    }
 
     public TwinCatProjectProbeReport CreateProjectWithPlcTemplates(
         string repositoryRoot,
@@ -104,23 +128,7 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
             ComAutomation.Invoke(plcNode, "CreateChild", "JointBenchPlc", 0, string.Empty, templates.PlcTemplateName);
             Thread.Sleep(TimeSpan.FromSeconds(4));
 
-            var plcProject = ComAutomation.Invoke(sysManager, "LookupTreeItem", "TIPC^JointBenchPlc^JointBenchPlc Project")
-                ?? throw new InvalidOperationException("JointBenchPlc project node was not found after creation.");
-            var pousNode = ComAutomation.Invoke(sysManager, "LookupTreeItem", "TIPC^JointBenchPlc^JointBenchPlc Project^POUs")
-                ?? throw new InvalidOperationException("JointBenchPlc POUs folder was not found after creation.");
-            var dutsNode = ComAutomation.Invoke(sysManager, "LookupTreeItem", "TIPC^JointBenchPlc^JointBenchPlc Project^DUTs")
-                ?? throw new InvalidOperationException("JointBenchPlc DUTs folder was not found after creation.");
-            ComAutomation.Invoke(pousNode, "DeleteChild", "MAIN");
-            foreach (var path in templates.PouTemplatePaths)
-            {
-                if (!File.Exists(path))
-                {
-                    throw new FileNotFoundException($"PLC template file not found: {path}", path);
-                }
-
-                var parent = IsDutTemplate(path) ? dutsNode : pousNode;
-                ComAutomation.Invoke(parent, "CreateChild", null, 58, null, path);
-            }
+            ImportPlcTemplates(sysManager, templates);
 
             var plcBuildSucceeded = BuildSolution(dte, sysManager, tempRoot);
             WriteTreeDiagnostics(sysManager, tempRoot);
@@ -193,6 +201,116 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
         }
     }
 
+    private TwinCatProjectProbeReport RefreshExistingProjectWithPlcTemplates(
+        string projectRoot,
+        string repositoryRoot,
+        string progId,
+        bool activate)
+    {
+        var templates = TwinCatProjectTemplateSet.FromRepositoryRoot(repositoryRoot);
+        object? dte = null;
+        var step = "copy-template-files";
+        try
+        {
+            CopyTemplateFiles(projectRoot, templates);
+            step = "create-dte";
+            dte = ComAutomation.Create(progId);
+            ComAutomation.TrySet(dte, "SuppressUI", true);
+            ComAutomation.TrySet(dte, "UserControl", false);
+            Thread.Sleep(TimeSpan.FromSeconds(5));
+
+            step = "open-solution";
+            var solutionPath = Path.Combine(projectRoot, "JointBenchProjectProbe.sln");
+            if (!File.Exists(solutionPath))
+            {
+                throw new FileNotFoundException($"JointBench TwinCAT solution was not found: {solutionPath}", solutionPath);
+            }
+
+            var solution = ComAutomation.Get(dte, "Solution")
+                ?? throw new InvalidOperationException("DTE Solution object is not available.");
+            ComAutomation.Retry(() => ComAutomation.Invoke(solution, "Open", solutionPath));
+            Thread.Sleep(TimeSpan.FromSeconds(6));
+            step = "get-project";
+            var project = OpenedSolutionProject(solution, Path.Combine(projectRoot, "JointBenchProjectProbe.tsproj"))
+                ?? throw new InvalidOperationException("TwinCAT project was not found in the existing solution.");
+            var sysManager = ComAutomation.Get(project, "Object")
+                ?? throw new InvalidOperationException("TwinCAT project object is not available.");
+
+            step = "import-plc-templates";
+            ImportPlcTemplates(sysManager, templates);
+            step = "build-solution";
+            var plcBuildSucceeded = BuildSolution(dte, sysManager, projectRoot);
+            step = "write-tree-diagnostics";
+            WriteTreeDiagnostics(sysManager, projectRoot);
+            if (!plcBuildSucceeded)
+            {
+                throw new InvalidOperationException($"PLC build failed. See {Path.Combine(projectRoot, "build-errors.txt")}.");
+            }
+
+            var activated = false;
+            if (activate)
+            {
+                step = "activate-configuration";
+                var activationStart = DateTimeOffset.UtcNow.AddSeconds(-2);
+                ActivateConfiguration(dte, sysManager);
+                var runtimeErrors = TwinCatRuntimeDiagnostics.ReadRecentStartupErrors(activationStart);
+                if (runtimeErrors.Count > 0)
+                {
+                    throw new InvalidOperationException($"TwinCAT restart reported errors: {string.Join(" | ", runtimeErrors)}");
+                }
+
+                activated = true;
+            }
+
+            return new TwinCatProjectProbeReport(
+                true,
+                string.Empty,
+                projectRoot,
+                "JointBenchProjectProbe",
+                "JointBenchPlc",
+                templates.PouTemplatePaths,
+                plcBuildSucceeded,
+                null,
+                ["Existing EtherCAT PDO links preserved."],
+                activate,
+                activated);
+        }
+        catch (Exception exc)
+        {
+            return new TwinCatProjectProbeReport(false, $"{step}: {ExceptionChain(exc)}", projectRoot, "JointBenchProjectProbe", "JointBenchPlc", [], false, null, [], activate, false);
+        }
+        finally
+        {
+            if (dte is not null)
+            {
+                try
+                {
+                    var solution = ComAutomation.Get(dte, "Solution");
+                    ComAutomation.Invoke(solution, "Close", false);
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    ComAutomation.Invoke(dte, "Quit");
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    Marshal.FinalReleaseComObject(dte);
+                }
+                catch
+                {
+                }
+            }
+        }
+    }
+
     private static void ActivateConfiguration(object dte, object sysManager)
     {
         try
@@ -218,8 +336,21 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
         var solutionBuild = ComAutomation.Get(solution, "SolutionBuild")
             ?? throw new InvalidOperationException("DTE SolutionBuild object is not available.");
 
-        ComAutomation.Invoke(solutionBuild, "Build", true);
-        ComAutomation.Invoke(dte, "ExecuteCommand", "Build.RebuildSolution");
+        try
+        {
+            ComAutomation.Invoke(solutionBuild, "Build", true);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            ComAutomation.Invoke(dte, "ExecuteCommand", "Build.RebuildSolution");
+        }
+        catch
+        {
+        }
         Thread.Sleep(TimeSpan.FromSeconds(8));
         var plcRoot = ComAutomation.Invoke(sysManager, "LookupTreeItem", "TIPC^JointBenchPlc")
             ?? throw new InvalidOperationException("JointBenchPlc root node was not found.");
@@ -227,7 +358,7 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
         Thread.Sleep(TimeSpan.FromSeconds(2));
         File.WriteAllLines(Path.Combine(tempRoot, "build-errors.txt"), ReadErrorList(dte));
         var lastBuildInfo = ComAutomation.Get(solutionBuild, "LastBuildInfo");
-        return Convert.ToInt32(lastBuildInfo) == 0 || File.Exists(Path.Combine(tempRoot, "JointBenchPlc", "JointBenchPlc.tmc"));
+        return lastBuildInfo is null || Convert.ToInt32(lastBuildInfo) == 0 || File.Exists(Path.Combine(tempRoot, "JointBenchPlc", "JointBenchPlc.tmc"));
     }
 
     private static IReadOnlyList<string> ReadErrorList(object dte)
@@ -261,6 +392,116 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
     private static bool IsDutTemplate(string path) =>
         Path.GetFileName(path).Equals("JointBenchTypes.TcPOU", StringComparison.OrdinalIgnoreCase) ||
         path.EndsWith(".TcDUT", StringComparison.OrdinalIgnoreCase);
+
+    private static void ImportPlcTemplates(object sysManager, TwinCatProjectTemplateSet templates)
+    {
+        _ = ComAutomation.Invoke(sysManager, "LookupTreeItem", "TIPC^JointBenchPlc^JointBenchPlc Project")
+            ?? throw new InvalidOperationException("JointBenchPlc project node was not found.");
+        var pousNode = ComAutomation.Invoke(sysManager, "LookupTreeItem", "TIPC^JointBenchPlc^JointBenchPlc Project^POUs")
+            ?? throw new InvalidOperationException("JointBenchPlc POUs folder was not found.");
+        var dutsNode = ComAutomation.Invoke(sysManager, "LookupTreeItem", "TIPC^JointBenchPlc^JointBenchPlc Project^DUTs")
+            ?? throw new InvalidOperationException("JointBenchPlc DUTs folder was not found.");
+
+        foreach (var childName in new[] { "MAIN", "FB_JointBenchAxis" })
+        {
+            TryDeleteChild(pousNode, childName);
+        }
+
+        foreach (var childName in new[] { "ST_JointBenchAds", "ST_Ti5CiA402PdoInput", "ST_Ti5CiA402PdoOutput", "JointBenchTypes" })
+        {
+            TryDeleteChild(dutsNode, childName);
+        }
+
+        foreach (var path in templates.PouTemplatePaths)
+        {
+            if (!File.Exists(path))
+            {
+                throw new FileNotFoundException($"PLC template file not found: {path}", path);
+            }
+
+            var parent = IsDutTemplate(path) ? dutsNode : pousNode;
+            ComAutomation.Invoke(parent, "CreateChild", null, 58, null, path);
+        }
+    }
+
+    private static void TryDeleteChild(object parent, string childName)
+    {
+        try
+        {
+            ComAutomation.Invoke(parent, "DeleteChild", childName);
+        }
+        catch
+        {
+        }
+    }
+
+    private static object? OpenedSolutionProject(object solution, string projectPath)
+    {
+        try
+        {
+            var projects = ComAutomation.Get(solution, "Projects");
+            var project = ComAutomation.GetIndexed(projects, "Item", 1);
+            if (project is not null)
+            {
+                return project;
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            var activeProjects = ComAutomation.Get(solution, "ActiveSolutionProjects");
+            if (activeProjects is Array { Length: > 0 } array)
+            {
+                return array.GetValue(0);
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            return ComAutomation.GetIndexed(solution, "Item", 1);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            return ComAutomation.Invoke(solution, "AddFromFile", projectPath);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void CopyTemplateFiles(string projectRoot, TwinCatProjectTemplateSet templates)
+    {
+        foreach (var sourcePath in templates.PouTemplatePaths)
+        {
+            var targetDirectory = IsDutTemplate(sourcePath)
+                ? Path.Combine(projectRoot, "JointBenchPlc", "DUTs")
+                : Path.Combine(projectRoot, "JointBenchPlc", "POUs");
+            Directory.CreateDirectory(targetDirectory);
+            File.Copy(sourcePath, Path.Combine(targetDirectory, Path.GetFileName(sourcePath)), overwrite: true);
+        }
+    }
+
+    private static string? FindLatestGeneratedProjectRoot()
+    {
+        var temp = new DirectoryInfo(Path.GetTempPath());
+        return temp.EnumerateDirectories("jointbench-tc-project-*")
+            .Where(directory => File.Exists(Path.Combine(directory.FullName, "JointBenchProjectProbe.sln")) &&
+                                Directory.Exists(Path.Combine(directory.FullName, "JointBenchPlc")))
+            .OrderByDescending(directory => directory.LastWriteTimeUtc)
+            .Select(directory => directory.FullName)
+            .FirstOrDefault();
+    }
 
     private static void WriteTreeDiagnostics(object sysManager, string tempRoot)
     {
