@@ -198,6 +198,43 @@ public sealed class StationReadinessTests
     }
 
     [Fact]
+    public void ProductionGateAcceptsHardStoneTi5WhenOpenOcdReadinessPasses()
+    {
+        var report = ReadyHardStoneReport();
+
+        var gate = ProductionGateState.FromReadiness(report);
+
+        Assert.True(gate.EnvironmentOk);
+        Assert.True(gate.Ti5Ready);
+        Assert.True(gate.AdsOk);
+        Assert.True(gate.ReadyForMotion);
+    }
+
+    [Fact]
+    public void StationReadinessBlocksHardStoneServoEnableGate()
+    {
+        var station = CreateHardStoneStation();
+        var service = new StationReadinessService(
+            preflight: () => new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]),
+            autoImportEsi: () => new EsiAutoImportReport(false, true, "No last ESI file has been selected.", null, null),
+            prepareTwinCat: _ => throw new InvalidOperationException("TwinCAT is not used for HardStone stations."),
+            checkAdsSymbols: options => throw new InvalidOperationException("ADS is not used for HardStone stations."),
+            hardStoneTransportFactory: _ => new StuckServoEnableHardStoneTransport());
+
+        var report = service.Check(station);
+
+        Assert.False(report.Ready);
+        Assert.Contains(report.Checks, check =>
+            check.Name == "hardstone-drive-state" &&
+            check.Status == "error" &&
+            check.Message.Contains("Switched On but not Operation Enabled") &&
+            check.Detail?.Contains("S-ON") == true &&
+            check.Detail.Contains("statusword=0x0233"));
+        var gate = ProductionGateState.FromReadiness(report);
+        Assert.False(gate.ReadyForMotion);
+    }
+
+    [Fact]
     public void EngineeringScanFailureDoesNotClearProductionReadiness()
     {
         var gate = ProductionGateState.FromReadiness(ReadyReportWithActiveConfigFallback());
@@ -286,6 +323,49 @@ public sealed class StationReadinessTests
         return station;
     }
 
+    private static string CreateHardStoneStation()
+    {
+        var station = Directory.CreateTempSubdirectory("jointbench-hardstone-ready-").FullName;
+        var firmware = Path.Combine(station, "fake.elf");
+        File.WriteAllText(firmware, "fake");
+        File.WriteAllText(Path.Combine(station, "bus.yaml"), $"""
+            protocol: hardstone_swd
+            hardstone:
+              firmware_elf: {firmware.Replace("\\", "/")}
+              adapter_speed_khz: 1000
+              counts_per_degree: 1000
+            """);
+        File.WriteAllText(Path.Combine(station, "device.yaml"), """
+            device:
+              vendor_id: 0x00522227
+              product_code: 0x00009253
+              revision_number: 0x00010005
+            """);
+        File.WriteAllText(Path.Combine(station, "safety.yaml"), """
+            limits:
+              min_position_deg: -30
+              max_position_deg: 750
+              max_current_a: 3
+              max_temperature_c: 60
+              max_following_error_deg: 2
+            """);
+        File.WriteAllText(Path.Combine(station, "tests.yaml"), """
+            tests:
+              - name: PositionStep1Deg
+                type: position_step_response
+                target_position_deg: 1
+              - name: LowSpeedForwardTwoTurns
+                type: position_ramp
+                start_position_deg: 0
+                target_position_deg: 720
+              - name: LowSpeedReverseTwoTurns
+                type: position_ramp
+                start_position_deg: 720
+                target_position_deg: 0
+            """);
+        return station;
+    }
+
     private static StationReadinessReport ReadyReportWithActiveConfigFallback()
     {
         var activeConfigScan = new EtherCatScanReport(
@@ -319,6 +399,28 @@ public sealed class StationReadinessTests
             new EsiAutoImportReport(true, true, "Last ESI file imported.", null, @"C:\Ti5.xml"),
             preparation,
             ads);
+    }
+
+    private static StationReadinessReport ReadyHardStoneReport()
+    {
+        var preflight = new PreflightReport(DateTimeOffset.UtcNow, [new CheckItem("windows", "ok", "ok")]);
+        var checks = new[]
+        {
+            new CheckItem("station-config", "ok", "Station config is motion-ready."),
+            new CheckItem("preflight", "ok", "Prerequisites passed."),
+            new CheckItem("hardstone-firmware", "ok", "HardStone firmware ELF is available."),
+            new CheckItem("hardstone-ti5", "ok", "HardStone master reports Ti5 EtherCAT OP.", "index=1, op=1"),
+        };
+
+        return new StationReadinessReport(
+            DateTimeOffset.UtcNow,
+            Ready: true,
+            "Station readiness checks passed.",
+            checks,
+            preflight,
+            null,
+            null,
+            null);
     }
 
     private sealed class EsiFixture : IDisposable
@@ -359,5 +461,50 @@ public sealed class StationReadinessTests
         }
 
         public void Dispose() => Directory.Delete(Root, recursive: true);
+    }
+
+    private sealed class StuckServoEnableHardStoneTransport : IHardStoneDebugTransport
+    {
+        private readonly Dictionary<string, int> values = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["g_host_statusword"] = 0x0233,
+            ["g_host_controlword"] = 0x000F,
+            ["g_host_command_ack"] = 3,
+            ["g_host_heartbeat_ack"] = 99,
+            ["g_host_target_relative_counts"] = 0,
+            ["g_host_command_error"] = 0,
+            ["g_host_enabled"] = 0,
+            ["g_host_watchdog_ok"] = 1,
+            ["g_host_zero_position_counts"] = 0,
+            ["g_host_actual_position_counts"] = 0,
+            ["g_host_target_position_counts"] = 0,
+            ["g_host_actual_velocity_counts"] = 0,
+            ["g_host_torque_actual"] = 0,
+            ["g_host_mode_of_operation"] = 8,
+            ["g_host_mode_display"] = 0,
+            ["g_ec_last_vendor"] = 0x00522227,
+            ["g_ec_last_product"] = 0x00009253,
+            ["g_ec_last_revision"] = 0x00010005,
+            ["g_ec_operational"] = 1,
+            ["g_ec_ti5_slave_index"] = 1,
+        };
+
+        public Task ConnectAsync(HardStoneDebugOptions options, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<int> ReadInt32Async(string symbol, CancellationToken cancellationToken)
+        {
+            values.TryGetValue(symbol, out var value);
+            return Task.FromResult(value);
+        }
+
+        public Task WriteInt32Async(string symbol, int value, CancellationToken cancellationToken)
+        {
+            values[symbol] = value;
+            return Task.CompletedTask;
+        }
+
+        public void Dispose()
+        {
+        }
     }
 }

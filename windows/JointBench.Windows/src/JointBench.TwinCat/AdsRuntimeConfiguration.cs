@@ -52,6 +52,10 @@ public sealed class AdsRuntimeConfigurator
             }
 
             await WriteAsync(client, root, "fTi5ZeroOffsetDeg", zeroOffset, cancellationToken);
+            await client.WriteAsync($"{config.Ads.SymbolPrefix}.fTargetPositionDeg", 0.0, cancellationToken);
+            await client.WriteAsync($"{config.Ads.SymbolPrefix}.bStart", false, cancellationToken);
+            await client.WriteAsync($"{config.Ads.SymbolPrefix}.bStop", false, cancellationToken);
+            await BumpCommandSequenceAsync(client, config.Ads.SymbolPrefix, cancellationToken);
             await PulseResetFaultAsync(client, config.Ads.SymbolPrefix, cancellationToken);
             var detail = config.Scaling.AutoZeroOnCheck
                 ? $"auto-zero applied; zero_offset_deg={zeroOffset:F6}"
@@ -66,12 +70,17 @@ public sealed class AdsRuntimeConfigurator
 
     private async Task PulseResetFaultAsync(IAdsSymbolClient client, string symbolPrefix, CancellationToken cancellationToken)
     {
-        var sequence = Convert.ToInt32(await client.ReadAsync($"{symbolPrefix}.nCommandSequence", typeof(int), cancellationToken));
-        await client.WriteAsync($"{symbolPrefix}.nCommandSequence", sequence + 1, cancellationToken);
+        await BumpCommandSequenceAsync(client, symbolPrefix, cancellationToken);
         await client.WriteAsync($"{symbolPrefix}.bResetFault", true, cancellationToken);
         await Task.Delay(resetPulseDuration, cancellationToken);
-        await client.WriteAsync($"{symbolPrefix}.nCommandSequence", sequence + 2, cancellationToken);
+        await BumpCommandSequenceAsync(client, symbolPrefix, cancellationToken);
         await client.WriteAsync($"{symbolPrefix}.bResetFault", false, cancellationToken);
+    }
+
+    private static async Task BumpCommandSequenceAsync(IAdsSymbolClient client, string symbolPrefix, CancellationToken cancellationToken)
+    {
+        var sequence = Convert.ToInt32(await client.ReadAsync($"{symbolPrefix}.nCommandSequence", typeof(int), cancellationToken));
+        await client.WriteAsync($"{symbolPrefix}.nCommandSequence", sequence + 1, cancellationToken);
     }
 
     private static Task WriteAsync(IAdsSymbolClient client, string root, string name, object value, CancellationToken cancellationToken) =>

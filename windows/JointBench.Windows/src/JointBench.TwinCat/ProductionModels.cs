@@ -6,6 +6,12 @@ public enum ReportLanguage
     SimplifiedChinese,
 }
 
+public enum ProductionRunProfile
+{
+    FullAcceptance,
+    OneDegreeVerification,
+}
+
 public sealed class SafetyLimitException(string message) : InvalidOperationException(message);
 
 public sealed record SafetyLimits(
@@ -61,8 +67,8 @@ public sealed record TestConfig(
         string name,
         double startPositionDegrees,
         double targetPositionDegrees,
-        double durationSeconds = 36.0,
-        double sampleRateHz = 10.0)
+        double durationSeconds = 144.0,
+        double sampleRateHz = 5.0)
     {
         return new TestConfig(
             name,
@@ -98,7 +104,14 @@ public sealed record ActuatorState(
     int? Controlword = null,
     int? CommandSequence = null,
     bool? WatchdogOk = null,
-    double? FollowingErrorDegrees = null)
+    double? FollowingErrorDegrees = null,
+    int? DebugCommandAck = null,
+    int? DebugHeartbeatAck = null,
+    int? DebugTargetRelativeCounts = null,
+    int? DebugTargetCounts = null,
+    int? DebugActualCounts = null,
+    int? ModeOfOperationCommand = null,
+    int? ModeOfOperationDisplay = null)
 {
     public static ActuatorState Sample(double timestampSeconds, double targetDegrees, double actualDegrees, double currentA, double temperatureC) =>
         new(
@@ -133,6 +146,13 @@ public sealed record ActuatorState(
             ["command_sequence"] = CommandSequence,
             ["watchdog_ok"] = WatchdogOk,
             ["following_error_deg"] = FollowingErrorDegrees,
+            ["debug_command_ack"] = DebugCommandAck,
+            ["debug_heartbeat_ack"] = DebugHeartbeatAck,
+            ["debug_target_relative_counts"] = DebugTargetRelativeCounts,
+            ["debug_target_counts"] = DebugTargetCounts,
+            ["debug_actual_counts"] = DebugActualCounts,
+            ["mode_command"] = ModeOfOperationCommand,
+            ["mode_display"] = ModeOfOperationDisplay,
         };
 }
 
@@ -197,7 +217,9 @@ public sealed record TestConfigSnapshot(
     AdsConnectionOptions Ads,
     SafetyLimits Safety,
     IReadOnlyList<TestConfig> Tests,
-    StationScaling Scaling);
+    StationScaling Scaling,
+    string Protocol = "twincat_ads",
+    HardStoneStationOptions? HardStone = null);
 
 public sealed record ProductionSequenceRequest(
     string OutputRoot,
@@ -207,6 +229,14 @@ public sealed record ProductionSequenceRequest(
     IReadOnlyList<TestConfig> Tests)
 {
     public StationScaling Scaling { get; init; } = StationScaling.DefaultTi5();
+
+    public string Protocol { get; init; } = "twincat_ads";
+
+    public HardStoneStationOptions? HardStone { get; init; }
+
+    public IReadOnlyList<CheckItem> PreRunChecks { get; init; } = [];
+
+    public HardStoneStateSnapshot? PreRunState { get; init; }
 
     public static ProductionSequenceRequest ForDefaultAcceptance(string outputRoot, ReportLanguage language) =>
         new(
@@ -219,6 +249,30 @@ public sealed record ProductionSequenceRequest(
                 TestConfig.ForLowSpeedRamp("LowSpeedForwardTwoTurns", 0.0, 720.0),
                 TestConfig.ForLowSpeedRamp("LowSpeedReverseTwoTurns", 720.0, 0.0),
             ]);
+
+    public ProductionSequenceRequest WithProfile(ProductionRunProfile profile)
+    {
+        if (profile == ProductionRunProfile.FullAcceptance)
+        {
+            return this;
+        }
+
+        if (profile != ProductionRunProfile.OneDegreeVerification)
+        {
+            throw new ArgumentOutOfRangeException(nameof(profile), profile, "Unknown production run profile.");
+        }
+
+        var oneDegreeTest = Tests.FirstOrDefault(test =>
+            string.Equals(test.Name, "PositionStep1Deg", StringComparison.OrdinalIgnoreCase) ||
+            (!string.Equals(test.MotionProfile, "position_ramp", StringComparison.OrdinalIgnoreCase) &&
+                Math.Abs(test.TargetPositionDegrees) <= 1.0));
+        if (oneDegreeTest is null)
+        {
+            throw new InvalidOperationException("The 1deg verification profile requires a configured PositionStep1Deg test.");
+        }
+
+        return this with { Tests = [oneDegreeTest] };
+    }
 }
 
 public sealed record ProductionSequenceResult(
@@ -232,6 +286,10 @@ public sealed record ProductionSequenceResult(
     TestConfigSnapshot ConfigSnapshot,
     IReadOnlyList<string> Events)
 {
+    public IReadOnlyList<CheckItem> PreRunChecks { get; init; } = [];
+
+    public HardStoneStateSnapshot? PreRunState { get; init; }
+
     public static ProductionSequenceResult Create(
         string testId,
         string overallResult,

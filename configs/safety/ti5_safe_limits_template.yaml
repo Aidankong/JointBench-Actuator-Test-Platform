@@ -4,7 +4,7 @@ limits:
   # Soft limits leave a small margin for normal settling behavior.
   min_position_deg: -6
   max_position_deg: 6
-  max_speed_dps: 30
+  max_speed_dps: 5
   max_current_a: 3
   max_temperature_c: 60
   max_following_error_deg: 2

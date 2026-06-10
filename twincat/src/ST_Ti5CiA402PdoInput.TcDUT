@@ -8,6 +8,7 @@ STRUCT
     nActualPosition : DINT;
     nActualVelocity : DINT;
     nActualTorqueOrCurrent : INT;
+    nModeOfOperationDisplay : SINT;
     nErrorCode : UINT;
     nTemperatureRaw : INT;
 END_STRUCT

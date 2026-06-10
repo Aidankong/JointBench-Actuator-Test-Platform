@@ -7,6 +7,27 @@ namespace JointBench.TwinCatHelper.Tests;
 public sealed class ReportAndTwinCatPreparationTests
 {
     [Fact]
+    public void HardStoneFirmwareAppliesTi5EsiStartupInitCommands()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "data", "ethercat-firmware-candidates", "ti5-safe", "Src", "soem.c"));
+
+        Assert.Contains("write8(slvcnt, 0x6060, 00, TI5_PROFILE_POSITION_MODE)", source);
+        Assert.Contains("write16(slvcnt, 0x2003, 00, 0)", source);
+    }
+
+    [Fact]
+    public void HardStoneFirmwareRunsProcessDataAtTi5Sync0Cycle()
+    {
+        var root = FindRepositoryRoot();
+        var soemSource = File.ReadAllText(Path.Combine(root, "data", "ethercat-firmware-candidates", "ti5-safe", "Src", "soem.c"));
+        var timerSource = File.ReadAllText(Path.Combine(root, "data", "ethercat-firmware-candidates", "ti5-safe", "Src", "bsp", "GeneralTIM", "bsp_GeneralTIM.c"));
+
+        Assert.Contains("#define SYNC0TIME 1000000", soemSource);
+        Assert.Contains("htim4.Init.Prescaler = 83", timerSource);
+        Assert.Contains("htim4.Init.Period = 999", timerSource);
+    }
+
+    [Fact]
     public void ReportWriterCreatesLocalizedArtifacts()
     {
         var output = Path.Combine(Path.GetTempPath(), $"jointbench-report-test-{Guid.NewGuid():N}");
@@ -64,6 +85,278 @@ public sealed class ReportAndTwinCatPreparationTests
     }
 
     [Fact]
+    public void ReportWriterIncludesHardStoneBackendMetadata()
+    {
+        var output = Path.Combine(Path.GetTempPath(), $"jointbench-report-test-{Guid.NewGuid():N}");
+        var writer = new TestReportWriter(new FixedClock(new DateTimeOffset(2026, 5, 26, 8, 0, 0, TimeSpan.Zero)));
+        var hardStone = new HardStoneStationOptions(
+            @"C:\repo\data\ethercat-firmware-candidates\ti5-safe\build-gcc\ysf4_ti5_ethercat_master.elf",
+            1000,
+            1456.3556);
+        var result = ProductionSequenceResult.Create(
+            "JB20260526-080000",
+            "PASS",
+            ReportLanguage.English,
+            output,
+            new DeviceInfo(
+                "Ti5 Harmonic Joint",
+                "YS-F4Pro",
+                "HardStone YS-F4Pro",
+                "hardstone_swd",
+                "OpenOCD SWD mailbox",
+                string.Empty,
+                0,
+                "g_host_*",
+                0x00522227,
+                0x00009253,
+                0x00010005,
+                "connected"),
+            [StageResult.Pass("EnableOnly")],
+            [ActuatorState.Sample(0, 0, 0, 0.2, 30) with { Protocol = "hardstone_swd" }],
+            new TestConfigSnapshot(
+                AdsConnectionOptions.LocalDefault(),
+                SafetyLimits.DefaultTi5(),
+                [TestConfig.ForTarget(1.0)],
+                StationScaling.DefaultTi5(),
+                "hardstone_swd",
+                hardStone),
+            []);
+
+        var written = writer.Write(result);
+
+        var markdown = File.ReadAllText(written.MarkdownReportPath);
+        var snapshot = File.ReadAllText(written.ConfigSnapshotPath);
+        Assert.Contains("Protocol: hardstone_swd", markdown);
+        Assert.Contains("Transport: OpenOCD SWD mailbox", markdown);
+        Assert.Contains("protocol: hardstone_swd", snapshot);
+        Assert.Contains("firmware_elf:", snapshot);
+        Assert.Contains("counts_per_degree: 1456.3556", snapshot);
+    }
+
+    [Fact]
+    public void ReportWriterSummarizesFinalStoppedHardStoneState()
+    {
+        var output = Path.Combine(Path.GetTempPath(), $"jointbench-report-test-{Guid.NewGuid():N}");
+        var writer = new TestReportWriter(new FixedClock(new DateTimeOffset(2026, 5, 26, 8, 0, 0, TimeSpan.Zero)));
+        var finalSample = ActuatorState.Sample(2.5, 1.0, 1.0, 0.0, 24.0) with
+        {
+            Protocol = "hardstone_swd",
+            Enabled = false,
+            FaultCode = 0,
+            Statusword = 0x0021,
+            Controlword = 0x0006,
+            CommandSequence = 4,
+            WatchdogOk = true,
+            FollowingErrorDegrees = 0.0,
+            DebugCommandAck = 4,
+            DebugHeartbeatAck = 54,
+            DebugTargetRelativeCounts = 1456,
+            DebugTargetCounts = 1456,
+            DebugActualCounts = 1456,
+        };
+        var result = ProductionSequenceResult.Create(
+            "JB20260526-080000",
+            "PASS",
+            ReportLanguage.English,
+            output,
+            new DeviceInfo(
+                "Ti5 Harmonic Joint",
+                "YS-F4Pro",
+                "HardStone YS-F4Pro",
+                "hardstone_swd",
+                "OpenOCD SWD mailbox",
+                string.Empty,
+                0,
+                "g_host_*",
+                0x00522227,
+                0x00009253,
+                0x00010005,
+                "connected"),
+            [StageResult.Pass("EnableOnly"), StageResult.Pass("PositionStep1Deg")],
+            [ActuatorState.Sample(0, 1, 0, 0.0, 24.0) with { Protocol = "hardstone_swd" }, finalSample],
+            new TestConfigSnapshot(
+                AdsConnectionOptions.LocalDefault(),
+                SafetyLimits.DefaultTi5(),
+                [TestConfig.ForTarget(1.0)],
+                StationScaling.DefaultTi5(),
+                "hardstone_swd",
+                new HardStoneStationOptions("firmware.elf", 1000, 1456.3556)),
+            []);
+
+        var written = writer.Write(result);
+
+        var markdown = File.ReadAllText(written.MarkdownReportPath);
+        var html = File.ReadAllText(written.HtmlReportPath);
+        Assert.Contains("## Final State", markdown);
+        Assert.Contains("Enabled: False", markdown);
+        Assert.Contains("Fault/Error Code: 0", markdown);
+        Assert.Contains("Statusword: 0x0021", markdown);
+        Assert.Contains("Controlword: 0x0006", markdown);
+        Assert.Contains("Command Ack: 4", markdown);
+        Assert.Contains("Heartbeat Ack: 54", markdown);
+        Assert.Contains("Target Relative Counts: 1456", markdown);
+        Assert.Contains("Target Counts: 1456", markdown);
+        Assert.Contains("Actual Counts: 1456", markdown);
+        Assert.Contains("<h2>Final State</h2>", html);
+        Assert.Contains("<td>False</td>", html);
+        Assert.Contains("<td>0x0021</td>", html);
+        Assert.Contains("<td>0x0006</td>", html);
+    }
+
+    [Fact]
+    public void ReportWriterIncludesFinalCiA402DiagnosisAndModeFeedback()
+    {
+        var output = Path.Combine(Path.GetTempPath(), $"jointbench-report-test-{Guid.NewGuid():N}");
+        var writer = new TestReportWriter(new FixedClock(new DateTimeOffset(2026, 5, 26, 8, 0, 0, TimeSpan.Zero)));
+        var finalSample = ActuatorState.Sample(8.0, 0.0, 0.0, 0.0, 24.0) with
+        {
+            Protocol = "hardstone_swd",
+            Enabled = false,
+            Statusword = 0x0233,
+            Controlword = 0x000F,
+            ModeOfOperationCommand = 8,
+            ModeOfOperationDisplay = 0,
+        };
+        var result = ProductionSequenceResult.Create(
+            "JB20260526-080000",
+            "ABORTED",
+            ReportLanguage.English,
+            output,
+            DeviceInfo.Ti5Default(AdsConnectionOptions.LocalDefault()),
+            [StageResult.Aborted("EnableOnly", ["Timed out waiting for enable."])],
+            [finalSample],
+            new TestConfigSnapshot(
+                AdsConnectionOptions.LocalDefault(),
+                SafetyLimits.DefaultTi5(),
+                [TestConfig.ForTarget(1.0)],
+                StationScaling.DefaultTi5(),
+                "hardstone_swd"),
+            []);
+
+        var written = writer.Write(result);
+
+        var markdown = File.ReadAllText(written.MarkdownReportPath);
+        var html = File.ReadAllText(written.HtmlReportPath);
+        var csv = File.ReadAllText(written.RawDataCsvPath);
+        Assert.Contains("Mode Command: 8", markdown);
+        Assert.Contains("Mode Display: 0", markdown);
+        Assert.Contains("Diagnosis: Switched On but not Operation Enabled", markdown);
+        Assert.Contains("S-ON", markdown);
+        Assert.Contains("<td>8</td>", html);
+        Assert.Contains("Switched On but not Operation Enabled", html);
+        Assert.Contains("mode_command,mode_display", csv);
+        Assert.Contains(",8,0", csv);
+    }
+
+    [Fact]
+    public void ReportWriterSummarizesMotionRangeAndFinalPosition()
+    {
+        var output = Path.Combine(Path.GetTempPath(), $"jointbench-report-test-{Guid.NewGuid():N}");
+        var writer = new TestReportWriter(new FixedClock(new DateTimeOffset(2026, 5, 26, 8, 0, 0, TimeSpan.Zero)));
+        var result = ProductionSequenceResult.Create(
+            "JB20260526-080000",
+            "PASS",
+            ReportLanguage.English,
+            output,
+            DeviceInfo.Ti5Default(AdsConnectionOptions.LocalDefault()),
+            [StageResult.Pass("EnableOnly"), StageResult.Pass("PositionStep1Deg")],
+            [
+                ActuatorState.Sample(0.0, 1.0, 0.0, 0.0, 24.0),
+                ActuatorState.Sample(1.0, 1.0, 0.8, 0.1, 24.0),
+                ActuatorState.Sample(2.0, 1.0, 1.2, 0.0, 24.0) with { Enabled = false },
+            ],
+            new TestConfigSnapshot(
+                AdsConnectionOptions.LocalDefault(),
+                SafetyLimits.DefaultTi5(),
+                [TestConfig.ForTarget(1.0)],
+                StationScaling.DefaultTi5()),
+            []);
+
+        var written = writer.Write(result);
+
+        var markdown = File.ReadAllText(written.MarkdownReportPath);
+        var html = File.ReadAllText(written.HtmlReportPath);
+        Assert.Contains("## Motion Summary", markdown);
+        Assert.Contains("Sample Count: 3", markdown);
+        Assert.Contains("Actual Position Range: 0..1.2 deg", markdown);
+        Assert.Contains("Actual Travel: 1.2 deg", markdown);
+        Assert.Contains("Final Target: 1 deg", markdown);
+        Assert.Contains("Final Actual: 1.2 deg", markdown);
+        Assert.Contains("<h2>Motion Summary</h2>", html);
+        Assert.Contains("<td>1.2 deg</td>", html);
+    }
+
+    [Fact]
+    public void ReportWriterIncludesPreRunHardStoneStateSnapshot()
+    {
+        var output = Path.Combine(Path.GetTempPath(), $"jointbench-report-test-{Guid.NewGuid():N}");
+        var writer = new TestReportWriter(new FixedClock(new DateTimeOffset(2026, 5, 26, 8, 0, 0, TimeSpan.Zero)));
+        var preRunState = new HardStoneStateSnapshot(
+            true,
+            "HardStone Ti5 state is readable.",
+            1,
+            1,
+            0x00522227,
+            0x00009253,
+            0x00010005,
+            0x0208,
+            0x0000,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            false,
+            true,
+            0,
+            -102699,
+            -102699,
+            0,
+            0,
+            1,
+            1,
+            -70.5178,
+            -70.5178,
+            0.0);
+        var result = ProductionSequenceResult.Create(
+            "JB20260526-080000",
+            "PASS",
+            ReportLanguage.English,
+            output,
+            DeviceInfo.Ti5Default(AdsConnectionOptions.LocalDefault()),
+            [StageResult.Pass("EnableOnly")],
+            [ActuatorState.Sample(0.0, 0.0, 0.0, 0.0, 24.0)],
+            new TestConfigSnapshot(
+                AdsConnectionOptions.LocalDefault(),
+                SafetyLimits.DefaultTi5(),
+                [TestConfig.ForTarget(1.0)],
+                StationScaling.DefaultTi5(),
+                "hardstone_swd"),
+            ["   0.000s  Test initialized."]) with
+        {
+            PreRunState = preRunState,
+        };
+
+        var written = writer.Write(result);
+
+        var markdown = File.ReadAllText(written.MarkdownReportPath);
+        var html = File.ReadAllText(written.HtmlReportPath);
+        Assert.Contains("## Pre-run State", markdown);
+        Assert.Contains("EtherCAT OP: 1", markdown);
+        Assert.Contains("Enabled: False", markdown);
+        Assert.Contains("Error: 0", markdown);
+        Assert.Contains("Statusword: 0x0208", markdown);
+        Assert.Contains("Mode Command: 1", markdown);
+        Assert.Contains("Mode Display: 1", markdown);
+        Assert.Contains("Actual Counts: -102699", markdown);
+        Assert.Contains("Actual Position: -70.5178 deg", markdown);
+        Assert.Contains("<h2>Pre-run State</h2>", html);
+        Assert.Contains("<td>0x0208</td>", html);
+    }
+
+    [Fact]
     public void TwinCatPreparationBuildsExpectedTi5PdoLinkPlan()
     {
         var box = new EtherCatBoxInfo(
@@ -86,7 +379,9 @@ public sealed class ReportAndTwinCatPreparationTests
 
         Assert.All(plan.Links, link => Assert.StartsWith("TIPC^", link.PlcVariablePath));
         Assert.Contains(plan.Links, link => link.PlcVariablePath.EndsWith("MAIN.nTi5Statusword") && link.EtherCatVariablePath.Contains("Status"));
+        Assert.Contains(plan.Links, link => link.PlcVariablePath.EndsWith("MAIN.nTi5ModeOfOperationDisplay") && link.EtherCatVariablePath.Contains("ModeOfOperationDisplay"));
         Assert.Contains(plan.Links, link => link.PlcVariablePath.EndsWith("MAIN.nTi5Controlword") && link.EtherCatVariablePath.Contains("Control"));
+        Assert.Contains(plan.Links, link => link.PlcVariablePath.EndsWith("MAIN.nTi5TargetVelocity") && link.EtherCatVariablePath.Contains("TargetVelocity"));
         Assert.Contains(plan.Links, link => link.PlcVariablePath.StartsWith("TIPC^JointBenchPlc^JointBenchPlc Instance^PlcTask Inputs^"));
         Assert.Equal(0x00522227, plan.VendorId);
         Assert.Equal(0x00009253, plan.ProductCode);
@@ -140,7 +435,9 @@ public sealed class ReportAndTwinCatPreparationTests
 
         Assert.Contains(plan.Links, link => link.PlcVariablePath.EndsWith("MAIN.nTi5Statusword") && link.EtherCatVariablePath.EndsWith("^Status Word"));
         Assert.Contains(plan.Links, link => link.PlcVariablePath.EndsWith("MAIN.nTi5ActualPosition") && link.EtherCatVariablePath.EndsWith("^ActualPosition"));
+        Assert.Contains(plan.Links, link => link.PlcVariablePath.EndsWith("MAIN.nTi5ModeOfOperationDisplay") && link.EtherCatVariablePath.EndsWith("^ModeOfOperationDisplay"));
         Assert.Contains(plan.Links, link => link.PlcVariablePath.EndsWith("MAIN.nTi5Controlword") && link.EtherCatVariablePath.EndsWith("^Control Word"));
+        Assert.Contains(plan.Links, link => link.PlcVariablePath.EndsWith("MAIN.nTi5TargetVelocity") && link.EtherCatVariablePath.EndsWith("^TargetVelocity"));
         Assert.Contains("0x603F:0", plan.MissingEntries);
         Assert.Contains("temperature", string.Join(";", plan.Warnings), StringComparison.OrdinalIgnoreCase);
     }
@@ -224,6 +521,57 @@ public sealed class ReportAndTwinCatPreparationTests
     }
 
     [Fact]
+    public void StationConfigLoaderReadsHardStoneBackendOptions()
+    {
+        var station = Path.Combine(Path.GetTempPath(), $"jointbench-station-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(station);
+        File.WriteAllText(Path.Combine(station, "bus.yaml"), """
+            protocol: hardstone_swd
+            hardstone:
+              firmware_elf: data/ethercat-firmware-candidates/ti5-safe/build-gcc/ysf4_ti5_ethercat_master.elf
+              adapter_speed_khz: 1000
+              counts_per_degree: 1456
+            """);
+        File.WriteAllText(Path.Combine(station, "device.yaml"), """
+            device:
+              name: Ti5 Harmonic Joint
+            scaling:
+              encoder_counts_per_rev: 524288
+              gear_ratio: 1.0
+            """);
+        File.WriteAllText(Path.Combine(station, "safety.yaml"), """
+            limits:
+              min_position_deg: -30
+              max_position_deg: 750
+              max_current_a: 3
+              max_temperature_c: 60
+              max_following_error_deg: 2
+            """);
+        File.WriteAllText(Path.Combine(station, "tests.yaml"), """
+            tests:
+              - name: PositionStep1Deg
+                target_position_deg: 1
+              - name: LowSpeedForwardTwoTurns
+                type: position_ramp
+                start_position_deg: 0
+                target_position_deg: 720
+              - name: LowSpeedReverseTwoTurns
+                type: position_ramp
+                start_position_deg: 720
+                target_position_deg: 0
+            """);
+
+        var config = StationConfigLoader.Load(station);
+
+        Assert.Equal("hardstone_swd", config.Protocol);
+        var hardStone = Assert.IsType<HardStoneStationOptions>(config.HardStone);
+        Assert.Equal(1000, hardStone.AdapterSpeedKHz);
+        Assert.Equal(1456, hardStone.CountsPerDegree);
+        Assert.EndsWith(@"ysf4_ti5_ethercat_master.elf", hardStone.FirmwareElfPath);
+        Assert.True(config.MotionAllowed);
+    }
+
+    [Fact]
     public void StationConfigLoaderReadsSplitOneAndFiveDegreeTestFiles()
     {
         var station = Path.Combine(Path.GetTempPath(), $"jointbench-station-{Guid.NewGuid():N}");
@@ -289,12 +637,13 @@ public sealed class ReportAndTwinCatPreparationTests
     }
 
     [Fact]
-    public void AxisTemplatePulsesProfilePositionNewSetpointBit()
+    public void AxisTemplateUsesTi5DefaultCyclicPositionMode()
     {
         var template = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "twincat", "src", "FB_JointBenchAxis.TcPOU"));
 
-        Assert.Contains("bSetpointPulseActive", template);
-        Assert.Contains("16#003F", template);
+        Assert.Contains("stDriveOut.nModeOfOperation := 8", template);
+        Assert.Contains("Cyclic Synchronous Position Mode", template);
+        Assert.Contains("nTargetVelocity", template);
     }
 
     [Fact]

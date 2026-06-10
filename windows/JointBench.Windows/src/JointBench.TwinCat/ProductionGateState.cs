@@ -17,14 +17,19 @@ public sealed record ProductionGateState(
     public static ProductionGateState FromReadiness(StationReadinessReport report)
     {
         var ti5Ready = report.Checks.Any(check =>
-            check.Name.Equals("ti5-scan", StringComparison.OrdinalIgnoreCase) &&
+            (check.Name.Equals("ti5-scan", StringComparison.OrdinalIgnoreCase) ||
+             check.Name.Equals("hardstone-ti5", StringComparison.OrdinalIgnoreCase)) &&
             !check.IsError);
+        var controlOk = report.AdsSymbols?.Ok == true ||
+            report.Checks.Any(check =>
+                check.Name.Equals("hardstone-ti5", StringComparison.OrdinalIgnoreCase) &&
+                !check.IsError);
 
         return new ProductionGateState(
             StationReady: report.Ready,
             EnvironmentOk: report.Preflight?.Ok == true,
             Ti5Ready: ti5Ready,
-            AdsOk: report.AdsSymbols?.Ok == true);
+            AdsOk: controlOk);
     }
 
     public ProductionGateState WithAdsSymbolCheck(AdsSymbolCheckReport report) =>

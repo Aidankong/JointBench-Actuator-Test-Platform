@@ -13,18 +13,18 @@ tests:
     type: position_ramp
     start_position_deg: 0
     target_position_deg: 720
-    duration_s: 36
-    sample_rate_hz: 10
+    duration_s: 144
+    sample_rate_hz: 5
     max_overshoot_pct: 10
-    max_settling_time_s: 38
+    max_settling_time_s: 146
     max_steady_state_error_deg: 1.0
 
   - name: LowSpeedReverseTwoTurns
     type: position_ramp
     start_position_deg: 720
     target_position_deg: 0
-    duration_s: 36
-    sample_rate_hz: 10
+    duration_s: 144
+    sample_rate_hz: 5
     max_overshoot_pct: 10
-    max_settling_time_s: 38
+    max_settling_time_s: 146
     max_steady_state_error_deg: 1.0

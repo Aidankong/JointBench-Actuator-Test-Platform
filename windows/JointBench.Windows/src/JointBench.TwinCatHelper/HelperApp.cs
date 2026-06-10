@@ -16,8 +16,11 @@ public sealed class HelperApp
     private readonly TwinCatPreparationService preparationService;
     private readonly TwinCatProjectProbe projectProbe;
     private readonly StationReadinessService stationReadinessService;
+    private readonly AdsRawStateProbe adsRawStateProbe;
+    private readonly HardStoneStateProbe hardStoneStateProbe;
+    private readonly Func<string, StationReadinessReport> stationReadinessCheck;
 
-    public HelperApp(IOutput output)
+    public HelperApp(IOutput output, Func<string, StationReadinessReport>? stationReadinessCheck = null)
         : this(
             output,
             new EsiService(),
@@ -27,7 +30,10 @@ public sealed class HelperApp
             new EtherCatScanProbe(),
             new TwinCatPreparationService(),
             new TwinCatProjectProbe(),
-            new StationReadinessService())
+            new StationReadinessService(),
+            new AdsRawStateProbe(),
+            new HardStoneStateProbe(),
+            stationReadinessCheck)
     {
     }
 
@@ -40,7 +46,10 @@ public sealed class HelperApp
         EtherCatScanProbe etherCatScanProbe,
         TwinCatPreparationService? preparationService = null,
         TwinCatProjectProbe? projectProbe = null,
-        StationReadinessService? stationReadinessService = null)
+        StationReadinessService? stationReadinessService = null,
+        AdsRawStateProbe? adsRawStateProbe = null,
+        HardStoneStateProbe? hardStoneStateProbe = null,
+        Func<string, StationReadinessReport>? stationReadinessCheck = null)
     {
         this.output = output;
         this.esiService = esiService;
@@ -51,6 +60,9 @@ public sealed class HelperApp
         this.preparationService = preparationService ?? new TwinCatPreparationService();
         this.projectProbe = projectProbe ?? new TwinCatProjectProbe();
         this.stationReadinessService = stationReadinessService ?? new StationReadinessService();
+        this.adsRawStateProbe = adsRawStateProbe ?? new AdsRawStateProbe();
+        this.hardStoneStateProbe = hardStoneStateProbe ?? new HardStoneStateProbe();
+        this.stationReadinessCheck = stationReadinessCheck ?? this.stationReadinessService.Check;
     }
 
     public int Run(string[] args)
@@ -72,6 +84,8 @@ public sealed class HelperApp
                 "prepare-twincat" => RunPrepareTwinCat(commandLine),
                 "project-spike" => RunProjectSpike(commandLine),
                 "run-sequence" => RunSequence(commandLine),
+                "read-ads-state" => RunReadAdsState(commandLine),
+                "read-hardstone-state" => RunReadHardStoneState(commandLine),
                 _ => UnknownCommand(commandLine.Command),
             };
         }
@@ -152,7 +166,7 @@ public sealed class HelperApp
 
     private int RunCheckStationReady(CommandLine commandLine)
     {
-        var result = stationReadinessService.Check(commandLine.RequireOption("station"));
+        var result = stationReadinessCheck(commandLine.RequireOption("station"));
         Write(result, commandLine.HasFlag("json"));
         return result.Ready ? 0 : 2;
     }
@@ -169,19 +183,42 @@ public sealed class HelperApp
 
     private int RunSequence(CommandLine commandLine)
     {
-        var station = StationConfigLoader.Load(commandLine.RequireOption("station"));
+        var stationDirectory = commandLine.RequireOption("station");
+        var station = StationConfigLoader.Load(stationDirectory);
         var language = ParseLanguage(commandLine.Option("language"));
         var fake = commandLine.HasFlag("fake");
+        StationReadinessReport? readiness = null;
+        HardStoneStateSnapshot? preRunState = null;
         if (!fake && !commandLine.HasFlag("confirm-motion"))
         {
             throw new InvalidOperationException("Real motion requires --confirm-motion after physical E-stop, fixture, and current-limited power are confirmed.");
         }
 
-        using IAdsSymbolClient client = fake ? new FakeAdsSymbolClient() : new BeckhoffAdsSymbolClient();
-        var adapter = new AdsMotionAdapter(
-            client,
-            station.Ads,
-            maxTargetAbsDegrees: Math.Max(Math.Abs(station.Safety.MinPositionDegrees), Math.Abs(station.Safety.MaxPositionDegrees)));
+        if (!fake)
+        {
+            readiness = stationReadinessCheck(stationDirectory);
+            if (!readiness.Ready)
+            {
+                if (commandLine.HasFlag("json"))
+                {
+                    Write(readiness, json: true);
+                }
+                else
+                {
+                    output.WriteError("Station readiness failed; run Check Station before motion.");
+                    Write(readiness, json: false);
+                }
+
+                return 2;
+            }
+
+            if (string.Equals(station.Protocol, "hardstone_swd", StringComparison.OrdinalIgnoreCase))
+            {
+                preRunState = hardStoneStateProbe.Read(station);
+            }
+        }
+
+        using var adapter = MotionAdapterFactory.Create(station, fake);
         var runner = new ProductionTestSequenceRunner(adapter, new TestReportWriter());
         var request = new ProductionSequenceRequest(
             commandLine.Option("reports") ?? Path.Combine(Environment.CurrentDirectory, "reports"),
@@ -191,10 +228,30 @@ public sealed class HelperApp
             station.Tests)
         {
             Scaling = station.Scaling,
-        };
+            Protocol = station.Protocol,
+            HardStone = station.HardStone,
+            PreRunChecks = readiness?.Checks ?? [],
+            PreRunState = preRunState,
+        }.WithProfile(ParseRunProfile(commandLine.Option("profile")));
         var result = runner.RunAsync(request, CancellationToken.None).GetAwaiter().GetResult();
         Write(result, commandLine.HasFlag("json"));
         return result.OverallResult == "PASS" ? 0 : 2;
+    }
+
+    private int RunReadAdsState(CommandLine commandLine)
+    {
+        var station = StationConfigLoader.Load(commandLine.RequireOption("station"));
+        var report = adsRawStateProbe.Read(station.Ads);
+        Write(report, commandLine.HasFlag("json"));
+        return 0;
+    }
+
+    private int RunReadHardStoneState(CommandLine commandLine)
+    {
+        var station = StationConfigLoader.Load(commandLine.RequireOption("station"));
+        var snapshot = hardStoneStateProbe.Read(station, commandLine.HasFlag("fake"));
+        Write(snapshot, commandLine.HasFlag("json"));
+        return snapshot.Ok ? 0 : 2;
     }
 
     private int PrintHelp()
@@ -214,7 +271,9 @@ public sealed class HelperApp
               check-station-ready --station <dir> [--json]
               prepare-twincat --station <dir> [--activate] [--prog-id TcXaeShell.DTE.15.0] [--json]
               project-spike [--repo-root <dir>] [--output <dir>] [--prog-id TcXaeShell.DTE.15.0] [--json]
-              run-sequence --station <dir> [--language zh-CN|en-US] [--reports <dir>] [--confirm-motion] [--fake] [--json]
+              run-sequence --station <dir> [--language zh-CN|en-US] [--profile full|1deg] [--reports <dir>] [--confirm-motion] [--fake] [--json]
+              read-ads-state --station <dir> [--json]
+              read-hardstone-state --station <dir> [--fake] [--json]
             """);
         return 0;
     }
@@ -392,6 +451,25 @@ public sealed class HelperApp
                 }
 
                 break;
+            case AdsRawStateReport report:
+                output.WriteLine($"ADS raw state: {report.Ads.AmsNetId}:{report.Ads.Port} {report.Ads.SymbolPrefix}");
+                foreach (var item in report.Values)
+                {
+                    output.WriteLine($"{item.Key}: {item.Value}");
+                }
+
+                break;
+            case HardStoneStateSnapshot snapshot:
+                output.WriteLine($"HardStone state: {(snapshot.Ok ? "OK" : "FAILED")}");
+                output.WriteLine(snapshot.Message);
+                output.WriteLine($"slave_index={snapshot.Ti5SlaveIndex}, op={snapshot.EtherCatOperational}, vendor=0x{snapshot.VendorId:X8}, product=0x{snapshot.ProductCode:X8}, revision=0x{snapshot.RevisionNumber:X8}");
+                output.WriteLine($"statusword=0x{snapshot.Statusword:X4}, controlword=0x{snapshot.Controlword:X4}, command_code={snapshot.CommandCode}, command_sequence={snapshot.CommandSequence}, command_ack={snapshot.CommandAck}");
+                output.WriteLine($"heartbeat_sequence={snapshot.HeartbeatSequence}, heartbeat_ack={snapshot.HeartbeatAck}, watchdog={snapshot.WatchdogOk}, enabled={snapshot.Enabled}, error={snapshot.CommandError}");
+                output.WriteLine($"mode_command={snapshot.ModeOfOperationCommand}, mode_display={snapshot.ModeOfOperationDisplay}");
+                output.WriteLine($"Diagnosis: {CiA402StateDiagnosis.Describe(snapshot.Statusword, snapshot.Controlword, snapshot.CommandError, snapshot.Enabled, snapshot.ModeOfOperationCommand, snapshot.ModeOfOperationDisplay)}");
+                output.WriteLine($"zero_counts={snapshot.ZeroPositionCounts}, actual_counts={snapshot.ActualPositionCounts}, target_counts={snapshot.TargetPositionCounts}, target_relative_counts={snapshot.TargetRelativeCounts}");
+                output.WriteLine($"actual_deg={snapshot.ActualPositionDegrees:F6}, target_deg={snapshot.TargetPositionDegrees:F6}, following_error_deg={snapshot.FollowingErrorDegrees:F6}, velocity_counts={snapshot.ActualVelocityCounts}, torque={snapshot.TorqueActual}");
+                break;
             default:
                 output.WriteLine(value.ToString() ?? string.Empty);
                 break;
@@ -403,4 +481,23 @@ public sealed class HelperApp
         string.Equals(language, "zh", StringComparison.OrdinalIgnoreCase)
             ? ReportLanguage.SimplifiedChinese
             : ReportLanguage.English;
+
+    private static ProductionRunProfile ParseRunProfile(string? profile)
+    {
+        if (string.IsNullOrWhiteSpace(profile) ||
+            string.Equals(profile, "full", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(profile, "acceptance", StringComparison.OrdinalIgnoreCase))
+        {
+            return ProductionRunProfile.FullAcceptance;
+        }
+
+        if (string.Equals(profile, "1deg", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(profile, "one-degree", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(profile, "commissioning-1deg", StringComparison.OrdinalIgnoreCase))
+        {
+            return ProductionRunProfile.OneDegreeVerification;
+        }
+
+        throw new ArgumentException($"Unknown run profile '{profile}'. Use full or 1deg.");
+    }
 }

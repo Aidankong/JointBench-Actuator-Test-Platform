@@ -231,7 +231,7 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
             ComAutomation.Retry(() => ComAutomation.Invoke(solution, "Open", solutionPath));
             Thread.Sleep(TimeSpan.FromSeconds(6));
             step = "get-project";
-            var project = OpenedSolutionProject(solution, Path.Combine(projectRoot, "JointBenchProjectProbe.tsproj"))
+            var project = WaitForOpenedSolutionProject(solution, Path.Combine(projectRoot, "JointBenchProjectProbe.tsproj"))
                 ?? throw new InvalidOperationException("TwinCAT project was not found in the existing solution.");
             var sysManager = ComAutomation.Get(project, "Object")
                 ?? throw new InvalidOperationException("TwinCAT project object is not available.");
@@ -246,6 +246,9 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
             {
                 throw new InvalidOperationException($"PLC build failed. See {Path.Combine(projectRoot, "build-errors.txt")}.");
             }
+
+            step = "relink-stored-ti5-pdos";
+            var (linkPlan, linkedVariables) = RelinkTi5FromStoredDiagnostics(sysManager, projectRoot);
 
             var activated = false;
             if (activate)
@@ -270,8 +273,8 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
                 "JointBenchPlc",
                 templates.PouTemplatePaths,
                 plcBuildSucceeded,
-                null,
-                ["Existing EtherCAT PDO links preserved."],
+                linkPlan,
+                linkedVariables,
                 activate,
                 activated);
         }
@@ -435,12 +438,52 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
         }
     }
 
+    private static object? WaitForOpenedSolutionProject(object solution, string projectPath)
+    {
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var project = OpenedSolutionProject(solution, projectPath);
+            if (project is not null)
+            {
+                return project;
+            }
+
+            Thread.Sleep(TimeSpan.FromSeconds(1));
+        }
+
+        return OpenedSolutionProject(solution, projectPath);
+    }
+
     private static object? OpenedSolutionProject(object solution, string projectPath)
     {
         try
         {
+            dynamic dynamicSolution = solution;
+            var projects = dynamicSolution.Projects;
+            if (Convert.ToInt32(projects.Count) > 0)
+            {
+                return projects.Item(1);
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            dynamic dynamicSolution = solution;
+            return dynamicSolution.Item(1);
+        }
+        catch
+        {
+        }
+
+        try
+        {
             var projects = ComAutomation.Get(solution, "Projects");
-            var project = ComAutomation.GetIndexed(projects, "Item", 1);
+            var project = ComAutomation.GetIndexed(projects, "Item", 1)
+                ?? ComAutomation.Invoke(projects, "Item", 1);
             if (project is not null)
             {
                 return project;
@@ -464,7 +507,8 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
 
         try
         {
-            return ComAutomation.GetIndexed(solution, "Item", 1);
+            return ComAutomation.GetIndexed(solution, "Item", 1)
+                ?? ComAutomation.Invoke(solution, "Item", 1);
         }
         catch
         {
@@ -585,18 +629,72 @@ public sealed class TwinCatProjectProbe : ITwinCatProjectPreparer
 
                 WriteBoxVariableDiagnostics(child, tempRoot, masterIndex, childIndex);
                 var linkPlan = TwinCatPdoLinkPlanner.BuildTi5Plan(box);
-                var linked = new List<string>();
-                foreach (var link in linkPlan.Links)
-                {
-                    ComAutomation.Invoke(sysManager, "LinkVariables", link.PlcVariablePath, link.EtherCatVariablePath);
-                    linked.Add($"{link.PlcVariablePath} <= {link.EtherCatVariablePath}");
-                }
+                var linked = LinkVariables(sysManager, linkPlan);
 
                 return (linkPlan, linked);
             }
         }
 
         throw new InvalidOperationException("No Ti5 EtherCAT slave was found while building the TwinCAT project.");
+    }
+
+    private static (Ti5PdoLinkPlan LinkPlan, IReadOnlyList<string> LinkedVariables) RelinkTi5FromStoredDiagnostics(
+        object sysManager,
+        string projectRoot)
+    {
+        var box = FindStoredTi5Box(projectRoot)
+            ?? throw new InvalidOperationException($"No stored Ti5 box diagnostics were found under {projectRoot}. Run Prepare TwinCAT with an online Ti5 scan once.");
+        var linkPlan = TwinCatPdoLinkPlanner.BuildTi5Plan(box);
+        return (linkPlan, LinkVariables(sysManager, linkPlan));
+    }
+
+    private static IReadOnlyList<string> LinkVariables(object sysManager, Ti5PdoLinkPlan linkPlan)
+    {
+        var linked = new List<string>();
+        foreach (var link in linkPlan.Links)
+        {
+            ComAutomation.Invoke(sysManager, "LinkVariables", link.PlcVariablePath, link.EtherCatVariablePath);
+            linked.Add($"{link.PlcVariablePath} <= {link.EtherCatVariablePath}");
+        }
+
+        return linked;
+    }
+
+    private static EtherCatBoxInfo? FindStoredTi5Box(string projectRoot)
+    {
+        foreach (var path in Directory.EnumerateFiles(projectRoot, "master-*-box-*.xml", SearchOption.TopDirectoryOnly))
+        {
+            var doc = XDocument.Load(path);
+            var treeItem = doc.Root;
+            if (treeItem is null)
+            {
+                continue;
+            }
+
+            var info = treeItem.Descendants().FirstOrDefault(element => element.Name.LocalName == "Info");
+            var slave = treeItem.Descendants().FirstOrDefault(element => element.Name.LocalName == "Slave");
+            var box = new EtherCatBoxInfo(
+                0,
+                0,
+                Text(treeItem, "ItemName"),
+                Text(treeItem, "PathName"),
+                IntValue(treeItem, "ItemSubType"),
+                Text(treeItem, "ItemSubTypeName"),
+                IntValue(info, "VendorId"),
+                IntValue(info, "ProductCode"),
+                IntValue(info, "RevisionNo"),
+                IntValue(info, "SerialNo"),
+                IntValue(info, "PhysAddr"),
+                IntValue(info, "AutoIncAddr"),
+                Text(slave, "EsiFile"),
+                path);
+            if (box.IsTi5)
+            {
+                return box;
+            }
+        }
+
+        return null;
     }
 
     private static void WriteBoxVariableDiagnostics(object boxItem, string tempRoot, int masterIndex, int childIndex)

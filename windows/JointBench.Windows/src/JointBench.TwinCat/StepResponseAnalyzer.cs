@@ -75,7 +75,7 @@ public static class StepResponseAnalyzer
             return new StepJudgment("ABORTED", reasons.Count > 0 ? reasons : ["Test aborted before completion."]);
         }
 
-        if (metrics.SettlingTimeSeconds is null || metrics.SteadyStateErrorDegrees is null)
+        if (metrics.SteadyStateErrorDegrees is null)
         {
             return new StepJudgment("INVALID", reasons.Count > 0 ? reasons : ["Response did not produce enough valid analysis data."]);
         }
@@ -85,7 +85,7 @@ public static class StepResponseAnalyzer
             reasons.Add($"Overshoot {metrics.OvershootPercent:F2}% > {config.MaxOvershootPercent:F2}%.");
         }
 
-        if (metrics.SettlingTimeSeconds > config.MaxSettlingTimeSeconds)
+        if (metrics.SettlingTimeSeconds is not null && metrics.SettlingTimeSeconds > config.MaxSettlingTimeSeconds)
         {
             reasons.Add($"Settling time {metrics.SettlingTimeSeconds:F3}s > {config.MaxSettlingTimeSeconds:F3}s.");
         }

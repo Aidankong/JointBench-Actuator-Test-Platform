@@ -35,10 +35,12 @@ public static class TwinCatPdoLinkPlanner
         AddLink(links, missing, entries, "nTi5ActualPosition", boxPath, "0x6064:0", input: true, required: true);
         AddLink(links, missing, entries, "nTi5ActualVelocity", boxPath, "0x606c:0", input: true, required: true);
         AddLink(links, missing, entries, "nTi5ActualTorqueOrCurrent", boxPath, "0x6077:0", input: true, required: false);
+        AddLink(links, missing, entries, "nTi5ModeOfOperationDisplay", boxPath, "0x6061:0", input: true, required: true);
         AddLink(links, missing, entries, "nTi5ErrorCode", boxPath, "0x603F:0", input: true, required: false);
         AddLink(links, missing, entries, "nTi5Controlword", boxPath, "0x6040:0", input: false, required: true);
         AddLink(links, missing, entries, "nTi5ModeOfOperation", boxPath, "0x6060:0", input: false, required: true);
         AddLink(links, missing, entries, "nTi5TargetPosition", boxPath, "0x607a:0", input: false, required: true);
+        AddLink(links, missing, entries, "nTi5TargetVelocity", boxPath, "0x60ff:0", input: false, required: true);
 
         if (!entries.ContainsKey("0x603F:0"))
         {
@@ -105,8 +107,10 @@ public static class TwinCatPdoLinkPlanner
             ["0x6064:0"] = "Transmit PDO mapping 0^ActualPosition",
             ["0x606c:0"] = "Transmit PDO mapping 0^ActualVelocity",
             ["0x6077:0"] = "Transmit PDO mapping 0^Torque Actual",
+            ["0x6061:0"] = "Transmit PDO mapping 0^ModeOfOperationDisplay",
             ["0x6040:0"] = "Receive PDO mapping 0^Control Word",
             ["0x607a:0"] = "Receive PDO mapping 0^TargetPosition",
+            ["0x60ff:0"] = "Receive PDO mapping 0^TargetVelocity",
             ["0x6060:0"] = "Receive PDO mapping 0^ModeOfOperation",
         };
 

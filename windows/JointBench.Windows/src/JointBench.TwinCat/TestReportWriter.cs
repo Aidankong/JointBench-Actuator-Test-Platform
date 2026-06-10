@@ -43,6 +43,13 @@ public sealed class TestReportWriter
         "command_sequence",
         "watchdog_ok",
         "following_error_deg",
+        "debug_command_ack",
+        "debug_heartbeat_ack",
+        "debug_target_relative_counts",
+        "debug_target_counts",
+        "debug_actual_counts",
+        "mode_command",
+        "mode_display",
     ];
 
     public TestReportWriter(IClock? clock = null)
@@ -88,9 +95,21 @@ public sealed class TestReportWriter
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
         var builder = new StringBuilder();
         builder.AppendLine($"config_hash: {hash}");
-        builder.AppendLine($"ams_net_id: {result.ConfigSnapshot.Ads.AmsNetId}");
-        builder.AppendLine($"ams_port: {result.ConfigSnapshot.Ads.Port}");
-        builder.AppendLine($"symbol_prefix: {result.ConfigSnapshot.Ads.SymbolPrefix}");
+        builder.AppendLine($"protocol: {result.ConfigSnapshot.Protocol}");
+        if (string.Equals(result.ConfigSnapshot.Protocol, "hardstone_swd", StringComparison.OrdinalIgnoreCase) &&
+            result.ConfigSnapshot.HardStone is { } hardStone)
+        {
+            builder.AppendLine("hardstone:");
+            builder.AppendLine($"  firmware_elf: {hardStone.FirmwareElfPath}");
+            builder.AppendLine($"  adapter_speed_khz: {hardStone.AdapterSpeedKHz}");
+            builder.AppendLine($"  counts_per_degree: {Format(hardStone.CountsPerDegree)}");
+        }
+        else
+        {
+            builder.AppendLine($"ams_net_id: {result.ConfigSnapshot.Ads.AmsNetId}");
+            builder.AppendLine($"ams_port: {result.ConfigSnapshot.Ads.Port}");
+            builder.AppendLine($"symbol_prefix: {result.ConfigSnapshot.Ads.SymbolPrefix}");
+        }
         builder.AppendLine("safety:");
         builder.AppendLine($"  min_position_deg: {Format(result.ConfigSnapshot.Safety.MinPositionDegrees)}");
         builder.AppendLine($"  max_position_deg: {Format(result.ConfigSnapshot.Safety.MaxPositionDegrees)}");
@@ -133,9 +152,14 @@ public sealed class TestReportWriter
         builder.AppendLine($"- Result: **{result.OverallResult}**");
         builder.AppendLine($"- Generated At: {Clock.NowLocal():yyyy-MM-dd HH:mm:ss}");
         builder.AppendLine($"- Device: {result.Device.DeviceId}");
-        builder.AppendLine($"- AMS Net ID: {result.Device.AmsNetId}");
-        builder.AppendLine($"- AMS Port: {result.Device.AmsPort}");
-        builder.AppendLine($"- ADS Symbol Prefix: {result.Device.AdsSymbolPrefix}");
+        builder.AppendLine($"- Protocol: {result.Device.Protocol}");
+        builder.AppendLine($"- Transport: {result.Device.TransportMode}");
+        if (!string.Equals(result.Device.Protocol, "hardstone_swd", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.AppendLine($"- AMS Net ID: {result.Device.AmsNetId}");
+            builder.AppendLine($"- AMS Port: {result.Device.AmsPort}");
+            builder.AppendLine($"- ADS Symbol Prefix: {result.Device.AdsSymbolPrefix}");
+        }
         builder.AppendLine($"- Vendor ID: 0x{result.Device.VendorId:X8}");
         builder.AppendLine($"- Product Code: 0x{result.Device.ProductCode:X8}");
         builder.AppendLine($"- Revision: 0x{result.Device.RevisionNumber:X8}");
@@ -149,6 +173,14 @@ public sealed class TestReportWriter
             builder.AppendLine($"| {item.StageName} | {item.Result} | {string.Join("; ", item.FailureReasons)} |");
         }
 
+        builder.AppendLine();
+        builder.Append(MotionSummaryMarkdown(result));
+        builder.AppendLine();
+        builder.Append(PreRunStateMarkdown(result));
+        builder.AppendLine();
+        builder.Append(PreRunChecksMarkdown(result));
+        builder.AppendLine();
+        builder.Append(FinalStateMarkdown(result));
         builder.AppendLine();
         builder.AppendLine($"## {artifacts}");
         builder.AppendLine();
@@ -173,6 +205,35 @@ public sealed class TestReportWriter
             Environment.NewLine,
             result.StageResults.Select(stage =>
                 $"<tr><td>{WebUtility.HtmlEncode(stage.StageName)}</td><td>{WebUtility.HtmlEncode(stage.Result)}</td><td>{WebUtility.HtmlEncode(string.Join("; ", stage.FailureReasons))}</td></tr>"));
+        var finalStateHeading = zh ? "最终状态" : "Final State";
+        var finalStateRows = string.Join(
+            Environment.NewLine,
+            FinalStateRows(result).Select(row =>
+                $"<tr><th>{WebUtility.HtmlEncode(row.Label)}</th><td>{WebUtility.HtmlEncode(row.Value)}</td></tr>"));
+        var preRunHeading = zh ? "预运行检查" : "Pre-run Checks";
+        var preRunRows = string.Join(
+            Environment.NewLine,
+            PreRunCheckRows(result).Select(row =>
+                $"<tr><td>{WebUtility.HtmlEncode(row.Name)}</td><td>{WebUtility.HtmlEncode(row.Status)}</td><td>{WebUtility.HtmlEncode(row.Message)}</td><td>{WebUtility.HtmlEncode(row.Detail)}</td></tr>"));
+        var motionSummaryHeading = zh ? "运动摘要" : "Motion Summary";
+        var motionSummaryRows = string.Join(
+            Environment.NewLine,
+            MotionSummaryRows(result).Select(row =>
+                $"<tr><th>{WebUtility.HtmlEncode(row.Label)}</th><td>{WebUtility.HtmlEncode(row.Value)}</td></tr>"));
+        var preRunStateHeading = zh ? "运动前状态" : "Pre-run State";
+        var preRunStateRows = string.Join(
+            Environment.NewLine,
+            PreRunStateRows(result).Select(row =>
+                $"<tr><th>{WebUtility.HtmlEncode(row.Label)}</th><td>{WebUtility.HtmlEncode(row.Value)}</td></tr>"));
+        var connectionRows = string.Equals(result.Device.Protocol, "hardstone_swd", StringComparison.OrdinalIgnoreCase)
+            ? $"""
+                <tr><th>Protocol</th><td>{WebUtility.HtmlEncode(result.Device.Protocol)}</td></tr>
+                <tr><th>Transport</th><td>{WebUtility.HtmlEncode(result.Device.TransportMode)}</td></tr>
+                """
+            : $"""
+                <tr><th>AMS Net ID</th><td>{WebUtility.HtmlEncode(result.Device.AmsNetId)}</td></tr>
+                <tr><th>ADS Symbol Prefix</th><td>{WebUtility.HtmlEncode(result.Device.AdsSymbolPrefix)}</td></tr>
+                """;
         return $$"""
             <!doctype html>
             <html lang="{{(zh ? "zh-CN" : "en")}}">
@@ -193,11 +254,18 @@ public sealed class TestReportWriter
               <p><strong>{{WebUtility.HtmlEncode(result.OverallResult)}}</strong></p>
               <table>
                 <tr><th>Test ID</th><td>{{WebUtility.HtmlEncode(result.TestId)}}</td></tr>
-                <tr><th>AMS Net ID</th><td>{{WebUtility.HtmlEncode(result.Device.AmsNetId)}}</td></tr>
-                <tr><th>ADS Symbol Prefix</th><td>{{WebUtility.HtmlEncode(result.Device.AdsSymbolPrefix)}}</td></tr>
+                {{connectionRows}}
               </table>
               <h2>{{(zh ? "阶段结果" : "Stage Results")}}</h2>
               <table><tr><th>Stage</th><th>Result</th><th>Reasons</th></tr>{{rows}}</table>
+              <h2>{{WebUtility.HtmlEncode(motionSummaryHeading)}}</h2>
+              <table>{{motionSummaryRows}}</table>
+              <h2>{{WebUtility.HtmlEncode(preRunStateHeading)}}</h2>
+              <table>{{preRunStateRows}}</table>
+              <h2>{{WebUtility.HtmlEncode(preRunHeading)}}</h2>
+              <table><tr><th>Name</th><th>Status</th><th>Message</th><th>Detail</th></tr>{{preRunRows}}</table>
+              <h2>{{WebUtility.HtmlEncode(finalStateHeading)}}</h2>
+              <table>{{finalStateRows}}</table>
               <h2>{{WebUtility.HtmlEncode(config)}}</h2>
               <p>config_snapshot.yaml</p>
               <h2>{{(zh ? "输出文件" : "Artifacts")}}</h2>
@@ -212,6 +280,170 @@ public sealed class TestReportWriter
             """;
     }
 
+    private static string MotionSummaryMarkdown(ProductionSequenceResult result)
+    {
+        var zh = result.Language == ReportLanguage.SimplifiedChinese;
+        var heading = zh ? "运动摘要" : "Motion Summary";
+        var builder = new StringBuilder();
+        builder.AppendLine($"## {heading}");
+        builder.AppendLine();
+        foreach (var row in MotionSummaryRows(result))
+        {
+            builder.AppendLine($"- {row.Label}: {row.Value}");
+        }
+
+        return builder.ToString();
+    }
+
+    private static string PreRunStateMarkdown(ProductionSequenceResult result)
+    {
+        var zh = result.Language == ReportLanguage.SimplifiedChinese;
+        var heading = zh ? "运动前状态" : "Pre-run State";
+        var builder = new StringBuilder();
+        builder.AppendLine($"## {heading}");
+        builder.AppendLine();
+        foreach (var row in PreRunStateRows(result))
+        {
+            builder.AppendLine($"- {row.Label}: {row.Value}");
+        }
+
+        return builder.ToString();
+    }
+
+    private static IReadOnlyList<(string Label, string Value)> PreRunStateRows(ProductionSequenceResult result)
+    {
+        var state = result.PreRunState;
+        if (state is null)
+        {
+            return [("Captured", "False")];
+        }
+
+        return
+        [
+            ("Captured", "True"),
+            ("Message", state.Message),
+            ("Slave Index", state.Ti5SlaveIndex.ToString(CultureInfo.InvariantCulture)),
+            ("EtherCAT OP", state.EtherCatOperational.ToString(CultureInfo.InvariantCulture)),
+            ("Enabled", state.Enabled.ToString()),
+            ("Watchdog OK", state.WatchdogOk.ToString()),
+            ("Error", state.CommandError.ToString(CultureInfo.InvariantCulture)),
+            ("Statusword", FormatHex(state.Statusword)),
+            ("Controlword", FormatHex(state.Controlword)),
+            ("Mode Command", state.ModeOfOperationCommand.ToString(CultureInfo.InvariantCulture)),
+            ("Mode Display", state.ModeOfOperationDisplay.ToString(CultureInfo.InvariantCulture)),
+            ("Actual Position", $"{Format(state.ActualPositionDegrees)} deg"),
+            ("Target Position", $"{Format(state.TargetPositionDegrees)} deg"),
+            ("Following Error", $"{Format(state.FollowingErrorDegrees)} deg"),
+            ("Actual Counts", state.ActualPositionCounts.ToString(CultureInfo.InvariantCulture)),
+            ("Target Counts", state.TargetPositionCounts.ToString(CultureInfo.InvariantCulture)),
+        ];
+    }
+
+    private static IReadOnlyList<(string Label, string Value)> MotionSummaryRows(ProductionSequenceResult result)
+    {
+        if (result.Samples.Count == 0)
+        {
+            return
+            [
+                ("Sample Count", "0"),
+                ("Actual Position Range", "n/a"),
+                ("Actual Travel", "n/a"),
+                ("Final Target", "n/a"),
+                ("Final Actual", "n/a"),
+            ];
+        }
+
+        var minActual = result.Samples.Min(sample => sample.ActualPositionDegrees);
+        var maxActual = result.Samples.Max(sample => sample.ActualPositionDegrees);
+        var final = result.Samples[^1];
+        return
+        [
+            ("Sample Count", result.Samples.Count.ToString(CultureInfo.InvariantCulture)),
+            ("Actual Position Range", $"{Format(minActual)}..{Format(maxActual)} deg"),
+            ("Actual Travel", $"{Format(maxActual - minActual)} deg"),
+            ("Final Target", $"{Format(final.TargetPositionDegrees)} deg"),
+            ("Final Actual", $"{Format(final.ActualPositionDegrees)} deg"),
+        ];
+    }
+
+    private static string PreRunChecksMarkdown(ProductionSequenceResult result)
+    {
+        var zh = result.Language == ReportLanguage.SimplifiedChinese;
+        var heading = zh ? "预运行检查" : "Pre-run Checks";
+        var builder = new StringBuilder();
+        builder.AppendLine($"## {heading}");
+        builder.AppendLine();
+        builder.AppendLine("| Name | Status | Message | Detail |");
+        builder.AppendLine("|---|---|---|---|");
+        foreach (var row in PreRunCheckRows(result))
+        {
+            builder.AppendLine($"| {row.Name} | {row.Status} | {row.Message} | {row.Detail} |");
+        }
+
+        return builder.ToString();
+    }
+
+    private static IReadOnlyList<(string Name, string Status, string Message, string Detail)> PreRunCheckRows(ProductionSequenceResult result)
+    {
+        if (result.PreRunChecks.Count == 0)
+        {
+            return [("n/a", "n/a", "No pre-run checks were attached to this report.", string.Empty)];
+        }
+
+        return result.PreRunChecks
+            .Select(check => (check.Name, check.Status, check.Message, check.Detail ?? string.Empty))
+            .ToList();
+    }
+
+    private static string FinalStateMarkdown(ProductionSequenceResult result)
+    {
+        var zh = result.Language == ReportLanguage.SimplifiedChinese;
+        var heading = zh ? "最终状态" : "Final State";
+        var builder = new StringBuilder();
+        builder.AppendLine($"## {heading}");
+        builder.AppendLine();
+        foreach (var row in FinalStateRows(result))
+        {
+            builder.AppendLine($"- {row.Label}: {row.Value}");
+        }
+
+        return builder.ToString();
+    }
+
+    private static IReadOnlyList<(string Label, string Value)> FinalStateRows(ProductionSequenceResult result)
+    {
+        var zh = result.Language == ReportLanguage.SimplifiedChinese;
+        var sample = result.Samples.LastOrDefault();
+        if (sample is null)
+        {
+            return
+            [
+                (zh ? "样本" : "Samples", zh ? "未采集" : "not captured"),
+            ];
+        }
+
+        return
+        [
+            ("Enabled", sample.Enabled.ToString()),
+            ("Fault/Error Code", sample.FaultCode.ToString(CultureInfo.InvariantCulture)),
+            ("Watchdog OK", FormatNullableBool(sample.WatchdogOk)),
+            ("Statusword", FormatHex(sample.Statusword)),
+            ("Controlword", FormatHex(sample.Controlword)),
+            ("Mode Command", FormatNullableInt(sample.ModeOfOperationCommand)),
+            ("Mode Display", FormatNullableInt(sample.ModeOfOperationDisplay)),
+            ("Diagnosis", CiA402StateDiagnosis.Describe(sample)),
+            ("Command Sequence", FormatNullableInt(sample.CommandSequence)),
+            ("Target Position", $"{Format(sample.TargetPositionDegrees)} deg"),
+            ("Actual Position", $"{Format(sample.ActualPositionDegrees)} deg"),
+            ("Following Error", FormatNullableDegrees(sample.FollowingErrorDegrees)),
+            ("Command Ack", FormatNullableInt(sample.DebugCommandAck)),
+            ("Heartbeat Ack", FormatNullableInt(sample.DebugHeartbeatAck)),
+            ("Target Relative Counts", FormatNullableInt(sample.DebugTargetRelativeCounts)),
+            ("Target Counts", FormatNullableInt(sample.DebugTargetCounts)),
+            ("Actual Counts", FormatNullableInt(sample.DebugActualCounts)),
+        ];
+    }
+
     private static string CsvEscape(object? value)
     {
         var text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
@@ -221,4 +453,16 @@ public sealed class TestReportWriter
     }
 
     private static string Format(double value) => value.ToString("0.####", CultureInfo.InvariantCulture);
+
+    private static string FormatNullableDegrees(double? value) =>
+        value.HasValue ? $"{Format(value.Value)} deg" : "n/a";
+
+    private static string FormatNullableInt(int? value) =>
+        value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "n/a";
+
+    private static string FormatNullableBool(bool? value) =>
+        value.HasValue ? value.Value.ToString() : "n/a";
+
+    private static string FormatHex(int? value) =>
+        value.HasValue ? $"0x{value.Value:X4}" : "n/a";
 }

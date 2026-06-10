@@ -122,6 +122,7 @@ public sealed class StationReadinessService
     private readonly Func<AdsConnectionOptions, AdsSymbolCheckReport> checkAdsSymbols;
     private readonly Func<AdsConnectionOptions, AdsRuntimeStateReport> checkAdsRuntimeState;
     private readonly Func<ActiveTwinCatConfigReport> inspectActiveConfig;
+    private readonly Func<int, IHardStoneDebugTransport> hardStoneTransportFactory;
 
     public StationReadinessService()
         : this(
@@ -131,7 +132,8 @@ public sealed class StationReadinessService
             options => new AdsSymbolValidator().Check(options),
             config => new AdsRuntimeConfigurator().ApplyAsync(config, CancellationToken.None).GetAwaiter().GetResult(),
             options => new AdsRuntimeStateProbe().Check(options),
-            () => TwinCatActiveConfigProbe.Inspect())
+            () => TwinCatActiveConfigProbe.Inspect(),
+            speed => new HardStoneOpenOcdTransport(speed))
     {
     }
 
@@ -142,7 +144,8 @@ public sealed class StationReadinessService
         Func<AdsConnectionOptions, AdsSymbolCheckReport> checkAdsSymbols,
         Func<StationConfig, AdsRuntimeConfigurationReport>? applyAdsRuntimeConfig = null,
         Func<AdsConnectionOptions, AdsRuntimeStateReport>? checkAdsRuntimeState = null,
-        Func<ActiveTwinCatConfigReport>? inspectActiveConfig = null)
+        Func<ActiveTwinCatConfigReport>? inspectActiveConfig = null,
+        Func<int, IHardStoneDebugTransport>? hardStoneTransportFactory = null)
     {
         this.preflight = preflight;
         this.autoImportEsi = autoImportEsi;
@@ -151,6 +154,7 @@ public sealed class StationReadinessService
         this.checkAdsSymbols = checkAdsSymbols;
         this.checkAdsRuntimeState = checkAdsRuntimeState ?? (options => new AdsRuntimeStateProbe().Check(options));
         this.inspectActiveConfig = inspectActiveConfig ?? (() => TwinCatActiveConfigProbe.Inspect());
+        this.hardStoneTransportFactory = hardStoneTransportFactory ?? (speed => new HardStoneOpenOcdTransport(speed));
     }
 
     public StationReadinessReport Check(string stationDirectory)
@@ -177,6 +181,11 @@ public sealed class StationReadinessService
         {
             checks.Add(new CheckItem("station-config", "error", "Station config failed to load.", exc.Message));
             return Finish(checks, preflightReport, esiReport, preparationReport, adsReport);
+        }
+
+        if (string.Equals(config.Protocol, "hardstone_swd", StringComparison.OrdinalIgnoreCase))
+        {
+            return CheckHardStoneStation(config, checks, preflightReport, esiReport, preparationReport, adsReport);
         }
 
         try
@@ -275,6 +284,86 @@ public sealed class StationReadinessService
         }
 
         return Finish(checks, preflightReport, esiReport, preparationReport, adsReport, runtimeStateReport);
+    }
+
+    private StationReadinessReport CheckHardStoneStation(
+        StationConfig config,
+        List<CheckItem> checks,
+        PreflightReport? preflightReport,
+        EsiAutoImportReport? esiReport,
+        TwinCatPreparationReport? preparationReport,
+        AdsSymbolCheckReport? adsReport)
+    {
+        try
+        {
+            preflightReport = preflight();
+            checks.Add(new CheckItem("preflight", preflightReport.Ok ? "ok" : "error", preflightReport.Ok ? "Prerequisites passed." : "One or more prerequisite checks failed."));
+        }
+        catch (Exception exc)
+        {
+            checks.Add(new CheckItem("preflight", "error", "Prerequisite check failed.", exc.Message));
+        }
+
+        var hardStone = config.HardStone;
+        if (hardStone is null)
+        {
+            checks.Add(new CheckItem("hardstone-config", "error", "HardStone backend options are missing."));
+            return Finish(checks, preflightReport, esiReport, preparationReport, adsReport);
+        }
+
+        checks.Add(new CheckItem(
+            "hardstone-firmware",
+            File.Exists(hardStone.FirmwareElfPath) ? "ok" : "error",
+            File.Exists(hardStone.FirmwareElfPath) ? "HardStone firmware ELF is available." : "HardStone firmware ELF is missing.",
+            hardStone.FirmwareElfPath));
+
+        if (File.Exists(hardStone.FirmwareElfPath))
+        {
+            try
+            {
+                using var transport = hardStoneTransportFactory(hardStone.AdapterSpeedKHz);
+                transport.ConnectAsync(
+                    new HardStoneDebugOptions(
+                        hardStone.FirmwareElfPath,
+                        hardStone.CountsPerDegree,
+                        Math.Max(Math.Abs(config.Safety.MinPositionDegrees), Math.Abs(config.Safety.MaxPositionDegrees))),
+                    CancellationToken.None).GetAwaiter().GetResult();
+                var ti5Index = transport.ReadInt32Async("g_ec_ti5_slave_index", CancellationToken.None).GetAwaiter().GetResult();
+                var operational = transport.ReadInt32Async("g_ec_operational", CancellationToken.None).GetAwaiter().GetResult();
+                var vendor = transport.ReadInt32Async("g_ec_last_vendor", CancellationToken.None).GetAwaiter().GetResult();
+                var product = transport.ReadInt32Async("g_ec_last_product", CancellationToken.None).GetAwaiter().GetResult();
+                var revision = transport.ReadInt32Async("g_ec_last_revision", CancellationToken.None).GetAwaiter().GetResult();
+                var statusword = transport.ReadInt32Async("g_host_statusword", CancellationToken.None).GetAwaiter().GetResult();
+                var controlword = transport.ReadInt32Async("g_host_controlword", CancellationToken.None).GetAwaiter().GetResult();
+                var error = transport.ReadInt32Async("g_host_command_error", CancellationToken.None).GetAwaiter().GetResult();
+                var enabled = transport.ReadInt32Async("g_host_enabled", CancellationToken.None).GetAwaiter().GetResult() != 0;
+                var watchdog = transport.ReadInt32Async("g_host_watchdog_ok", CancellationToken.None).GetAwaiter().GetResult() != 0;
+                var modeCommand = transport.ReadInt32Async("g_host_mode_of_operation", CancellationToken.None).GetAwaiter().GetResult();
+                var modeDisplay = transport.ReadInt32Async("g_host_mode_display", CancellationToken.None).GetAwaiter().GetResult();
+
+                var ok = ti5Index > 0 && operational > 0 && vendor == config.VendorId && product == config.ProductCode;
+                checks.Add(new CheckItem(
+                    "hardstone-ti5",
+                    ok ? "ok" : "error",
+                    ok ? "HardStone master reports Ti5 EtherCAT OP." : "HardStone master did not report Ti5 EtherCAT OP.",
+                    $"index={ti5Index}, op={operational}, vendor=0x{vendor:X8}, product=0x{product:X8}, revision=0x{revision:X8}, statusword=0x{statusword:X4}, error={error}"));
+
+                var diagnosis = CiA402StateDiagnosis.Describe(statusword, controlword, error, enabled, modeCommand, modeDisplay);
+                var servoEnableGate = !enabled && (statusword & 0x006F) == 0x0023 && (controlword & 0x000F) == 0x000F;
+                var driveStateOk = ok && watchdog && error == 0 && (statusword & 0x0008) == 0 && !servoEnableGate;
+                checks.Add(new CheckItem(
+                    "hardstone-drive-state",
+                    driveStateOk ? "ok" : "error",
+                    driveStateOk ? "HardStone Ti5 drive state is readable and not faulted." : diagnosis,
+                    $"statusword=0x{statusword:X4}, controlword=0x{controlword:X4}, mode_command={modeCommand}, mode_display={modeDisplay}, enabled={enabled}, watchdog={watchdog}, error={error}; {diagnosis}"));
+            }
+            catch (Exception exc)
+            {
+                checks.Add(new CheckItem("hardstone-ti5", "error", "HardStone Ti5 check failed.", exc.Message));
+            }
+        }
+
+        return Finish(checks, preflightReport, esiReport, preparationReport, adsReport);
     }
 
     private static StationReadinessReport Finish(

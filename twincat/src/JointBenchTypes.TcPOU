@@ -42,6 +42,7 @@ STRUCT
     nActualPosition : DINT;
     nActualVelocity : DINT;
     nActualTorqueOrCurrent : INT;
+    nModeOfOperationDisplay : SINT;
     nErrorCode : UINT;
     nTemperatureRaw : INT;
 END_STRUCT
@@ -52,6 +53,7 @@ STRUCT
     nControlword : UINT;
     nModeOfOperation : SINT;
     nTargetPosition : DINT;
+    nTargetVelocity : DINT;
 END_STRUCT
 END_TYPE
 ]]></Declaration>

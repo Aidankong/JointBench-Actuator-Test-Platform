@@ -34,6 +34,7 @@ VAR
     fCountsPerDeg : LREAL;
     fActualPositionDeg : LREAL;
     fTargetCounts : LREAL;
+    fTargetVelocityCountsPerSecond : LREAL;
     fVelocityDps : LREAL;
     bTargetValid : BOOL;
     bSetpointPulseActive : BOOL;
@@ -66,6 +67,9 @@ END_IF
 
 fActualPositionDeg := (DINT_TO_LREAL(stDriveIn.nActualPosition) / fCountsPerDeg) * DINT_TO_LREAL(nPositionDirection) + fZeroOffsetDeg;
 fVelocityDps := (DINT_TO_LREAL(stDriveIn.nActualVelocity) / fCountsPerDeg) * DINT_TO_LREAL(nPositionDirection);
+fTargetVelocityCountsPerSecond := ABS(fMaxVelocityDps) * fCountsPerDeg;
+stDriveOut.nModeOfOperation := 8; (* Cyclic Synchronous Position Mode; Ti5 ESI default InitCmd also selects mode 8. *)
+stDriveOut.nTargetVelocity := LREAL_TO_DINT(fTargetVelocityCountsPerSecond);
 
 stIf.fActualPositionDeg := fActualPositionDeg;
 stIf.fActualVelocityDps := fVelocityDps;
@@ -113,6 +117,7 @@ END_IF
 
 IF stIf.bResetFault THEN
     stDriveOut.nControlword := 16#0080;
+    stDriveOut.nTargetPosition := stDriveIn.nActualPosition;
     bSetpointPulseActive := FALSE;
     nSetpointPulseCycles := 0;
     stIf.bError := FALSE;
@@ -121,17 +126,18 @@ IF stIf.bResetFault THEN
     stIf.nErrorCode := 0;
 ELSIF stIf.bStop THEN
     stDriveOut.nControlword := 16#0002;
+    stDriveOut.nTargetPosition := stDriveIn.nActualPosition;
     bSetpointPulseActive := FALSE;
     nSetpointPulseCycles := 0;
     stIf.bBusy := FALSE;
     stIf.bDone := FALSE;
 ELSIF stIf.bError THEN
     stDriveOut.nControlword := 16#0002;
+    stDriveOut.nTargetPosition := stDriveIn.nActualPosition;
     bSetpointPulseActive := FALSE;
     nSetpointPulseCycles := 0;
     stIf.bBusy := FALSE;
 ELSIF stIf.bEnable THEN
-    stDriveOut.nModeOfOperation := 1; (* Profile Position Mode *)
     CASE (stDriveIn.nStatusword AND 16#006F) OF
         16#0040:
             stDriveOut.nControlword := 16#0006; (* shutdown *)
@@ -146,6 +152,7 @@ ELSIF stIf.bEnable THEN
     END_CASE
 ELSE
     stDriveOut.nControlword := 16#0000; (* disable voltage *)
+    stDriveOut.nTargetPosition := stDriveIn.nActualPosition;
     bSetpointPulseActive := FALSE;
     nSetpointPulseCycles := 0;
     stIf.bBusy := FALSE;
@@ -161,8 +168,8 @@ IF bStartEdge.Q AND bOperationEnabled AND stIf.bReady THEN
     ELSE
         fTargetCounts := (stIf.fTargetPositionDeg - fZeroOffsetDeg) * fCountsPerDeg * DINT_TO_LREAL(nPositionDirection);
         stDriveOut.nTargetPosition := LREAL_TO_DINT(fTargetCounts);
-        bSetpointPulseActive := TRUE;
-        nSetpointPulseCycles := 3;
+        bSetpointPulseActive := FALSE;
+        nSetpointPulseCycles := 0;
         stIf.bBusy := TRUE;
         stIf.bDone := FALSE;
     END_IF

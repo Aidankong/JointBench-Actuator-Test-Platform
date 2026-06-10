@@ -16,11 +16,13 @@ VAR
     nTi5ActualPosition AT %I* : DINT;
     nTi5ActualVelocity AT %I* : DINT;
     nTi5ActualTorqueOrCurrent AT %I* : INT;
+    nTi5ModeOfOperationDisplay AT %I* : SINT;
     nTi5ErrorCode AT %I* : UINT;
     nTi5TemperatureRaw AT %I* : INT;
     nTi5Controlword AT %Q* : UINT;
     nTi5ModeOfOperation AT %Q* : SINT;
     nTi5TargetPosition AT %Q* : DINT;
+    nTi5TargetVelocity AT %Q* : DINT;
     (* Runtime configuration written by the C# station software from the local station YAML. *)
     fTi5MinPositionDeg : LREAL := -6.0;
     fTi5MaxPositionDeg : LREAL := 6.0;
@@ -45,6 +47,7 @@ stTi5In.nStatusword := nTi5Statusword;
 stTi5In.nActualPosition := nTi5ActualPosition;
 stTi5In.nActualVelocity := nTi5ActualVelocity;
 stTi5In.nActualTorqueOrCurrent := nTi5ActualTorqueOrCurrent;
+stTi5In.nModeOfOperationDisplay := nTi5ModeOfOperationDisplay;
 stTi5In.nErrorCode := nTi5ErrorCode;
 stTi5In.nTemperatureRaw := nTi5TemperatureRaw;
 
@@ -69,6 +72,7 @@ fbJointBenchAxis(
 nTi5Controlword := stTi5Out.nControlword;
 nTi5ModeOfOperation := stTi5Out.nModeOfOperation;
 nTi5TargetPosition := stTi5Out.nTargetPosition;
+nTi5TargetVelocity := stTi5Out.nTargetVelocity;
 ]]></ST>
     </Implementation>
   </POU>

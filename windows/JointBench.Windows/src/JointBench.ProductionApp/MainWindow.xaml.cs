@@ -16,9 +16,14 @@ public partial class MainWindow : Window
     private readonly TwinCatPreparationService preparationService = new();
     private readonly EsiAutoImportService esiAutoImportService = new();
     private readonly StationReadinessService stationReadinessService = new();
+    private readonly HardStoneStateProbe hardStoneStateProbe = new();
 
     private ProductionGateState productionGate = ProductionGateState.Locked;
+    private StationReadinessReport? lastReadinessReport;
     private string? lastReportDirectory;
+    private CancellationTokenSource? productionTestCancellation;
+    private bool testRunning;
+    private bool uiBusy;
 
     public MainWindow()
     {
@@ -59,21 +64,22 @@ public partial class MainWindow : Window
     private void ApplyLanguage()
     {
         TitleText.Text = IsChinese ? "JointBench 产线测试" : "JointBench Production";
-        SubtitleText.Text = IsChinese ? "Ti5 TwinCAT ADS 工位" : "Ti5 TwinCAT ADS station";
+        SubtitleText.Text = IsChinese ? "Ti5 硬石 EtherCAT 主站工位" : "Ti5 HardStone EtherCAT master station";
         WorkflowHeader.Text = IsChinese ? "流程" : "Workflow";
         Workflow1.Text = IsChinese ? "1  一键工位检查" : "1  Station check";
-        Workflow2.Text = IsChinese ? "2  ESI 导入" : "2  ESI import";
-        Workflow3.Text = IsChinese ? "3  TwinCAT 准备" : "3  Prepare TwinCAT";
-        Workflow4.Text = IsChinese ? "4  Ti5 就绪" : "4  Ti5 ready";
-        Workflow5.Text = IsChinese ? "5  ADS 符号" : "5  ADS symbols";
+        Workflow2.Text = IsChinese ? "2  主站固件" : "2  Master firmware";
+        Workflow3.Text = IsChinese ? "3  SWD 通信" : "3  SWD link";
+        Workflow4.Text = IsChinese ? "4  Ti5 EtherCAT OP" : "4  Ti5 EtherCAT OP";
+        Workflow5.Text = IsChinese ? "5  控制链路" : "5  Control link";
         Workflow6.Text = IsChinese ? "Enable only 使能不运动" : "Enable only";
         Workflow7.Text = IsChinese ? "1deg 阶跃" : "1deg step";
         Workflow8.Text = IsChinese ? "低速两圈正反转" : "Low-speed two-turn";
         ReadinessHeader.Text = IsChinese ? "工位就绪" : "Station Readiness";
-        EsiHeader.Text = "ESI";
+        EsiHeader.Text = IsChinese ? "工程工具" : "Engineering Tools";
         TestHeader.Text = IsChinese ? "产线测试" : "Production Test";
         EventHeader.Text = IsChinese ? "事件输出" : "Event Output";
         RunPreflightButton.Content = IsChinese ? "一键工位检查" : "Check Station";
+        ReadHardStoneStateButton.Content = IsChinese ? "读取状态" : "Read State";
         AutomationSmokeButton.Content = IsChinese ? "自动化诊断" : "Automation Smoke";
         ScanSpikeButton.Content = IsChinese ? "工程扫描" : "Engineering Scan";
         ScanSpikeButton.ToolTip = IsChinese
@@ -81,13 +87,15 @@ public partial class MainWindow : Window
             : "Engineering diagnostic only; production readiness uses Check Station.";
         ImportEsiButton.Content = IsChinese ? "导入 ESI" : "Import ESI";
         ImportLastEsiButton.Content = IsChinese ? "导入上次 ESI" : "Import Last";
-        PrepareTwinCatButton.Content = IsChinese ? "准备 TwinCAT" : "Prepare TwinCAT";
-        ActivateTwinCatCheckBox.Content = IsChinese ? "激活配置" : "Activate";
+        PrepareTwinCatButton.Content = IsChinese ? "旧 TwinCAT 准备" : "Legacy TwinCAT";
+        ActivateTwinCatCheckBox.Content = IsChinese ? "激活旧配置" : "Activate legacy";
         AmsLabel.Text = "AMS Net ID";
+        VerifyOneDegButton.Content = IsChinese ? "1deg 验证" : "1deg Verify";
         PortLabel.Text = IsChinese ? "端口" : "Port";
         PrefixLabel.Text = IsChinese ? "符号前缀" : "Symbol Prefix";
         CheckAdsSymbolsButton.Content = IsChinese ? "检查符号" : "Check Symbols";
         StartTestButton.Content = IsChinese ? "开始测试" : "Start Test";
+        StopTestButton.Content = IsChinese ? "停止测试" : "Stop Test";
         OpenReportButton.Content = IsChinese ? "打开报告" : "Open Report";
         EStopCheckBox.Content = IsChinese ? "急停已确认" : "E-stop ready";
         FixtureCheckBox.Content = IsChinese ? "治具已确认" : "Fixture ready";
@@ -99,6 +107,31 @@ public partial class MainWindow : Window
     private async void RunPreflightButton_Click(object sender, RoutedEventArgs e)
     {
         await RunStationReadinessAsync(autoStarted: false);
+    }
+
+    private async void ReadHardStoneStateButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetBusy(true);
+        WriteOutput("HardStone state read started.");
+        try
+        {
+            var config = StationConfigLoader.Load(FullStationPath());
+            var snapshot = await Task.Run(() => hardStoneStateProbe.Read(config));
+            WriteHardStoneState(snapshot);
+            LiveStatusText.Text = snapshot.Ok
+                ? (IsChinese ? "硬石状态 OK" : "HardStone state OK")
+                : (IsChinese ? "硬石状态异常" : "HardStone state issue");
+        }
+        catch (Exception exc)
+        {
+            WriteOutput($"HardStone state read error: {exc.Message}");
+            LiveStatusText.Text = IsChinese ? "读取状态失败" : "State read failed";
+            MessageBox.Show(this, exc.Message, IsChinese ? "读取状态失败" : "Read State Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
     }
 
     private async Task RunStationReadinessAsync(bool autoStarted)
@@ -114,6 +147,7 @@ public partial class MainWindow : Window
         try
         {
             var report = await Task.Run(() => stationReadinessService.Check(station));
+            lastReadinessReport = report;
             ApplyReadinessReport(report);
             WriteReadinessReport(report);
         }
@@ -203,7 +237,7 @@ public partial class MainWindow : Window
             : (IsChinese ? "环境待检查" : "Environment");
         EnvironmentBadge.Foreground = Brush(productionGate.EnvironmentOk ? "#244C2A" : "#6A4A00");
 
-        AdsBadge.Text = productionGate.AdsOk ? "ADS OK" : (IsChinese ? "ADS 待检查" : "ADS pending");
+        AdsBadge.Text = productionGate.AdsOk ? (IsChinese ? "控制链路 OK" : "Control OK") : (IsChinese ? "控制链路待检查" : "Control pending");
         AdsBadge.Foreground = Brush(productionGate.AdsOk ? "#244C2A" : "#6A4A00");
 
         MotionBadge.Text = productionGate.ReadyForMotion
@@ -368,7 +402,22 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void VerifyOneDegButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RunProductionTestAsync(ProductionRunProfile.OneDegreeVerification);
+    }
+
     private async void StartTestButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RunProductionTestAsync(ProductionRunProfile.FullAcceptance);
+    }
+
+    private void SafetyCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        UpdateMotionControls();
+    }
+
+    private async Task RunProductionTestAsync(ProductionRunProfile profile)
     {
         if (!productionGate.ReadyForMotion)
         {
@@ -392,6 +441,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        productionTestCancellation = new CancellationTokenSource();
+        testRunning = true;
         SetBusy(true);
         LiveStatusText.Text = IsChinese ? "测试中..." : "Testing...";
         MotionBadge.Text = IsChinese ? "运动中" : "Motion running";
@@ -399,12 +450,12 @@ public partial class MainWindow : Window
         try
         {
             var config = StationConfigLoader.Load(FullStationPath());
-            using var client = new BeckhoffAdsSymbolClient();
+            var preRunState = string.Equals(config.Protocol, "hardstone_swd", StringComparison.OrdinalIgnoreCase)
+                ? await Task.Run(() => hardStoneStateProbe.Read(config), productionTestCancellation.Token)
+                : null;
+            using var adapter = MotionAdapterFactory.Create(config);
             var runner = new ProductionTestSequenceRunner(
-                new AdsMotionAdapter(
-                    client,
-                    config.Ads,
-                    maxTargetAbsDegrees: Math.Max(Math.Abs(config.Safety.MinPositionDegrees), Math.Abs(config.Safety.MaxPositionDegrees))),
+                adapter,
                 new TestReportWriter(),
                 line => Dispatcher.Invoke(() =>
                 {
@@ -420,8 +471,12 @@ public partial class MainWindow : Window
                     config.Tests)
                 {
                     Scaling = config.Scaling,
-                },
-                CancellationToken.None);
+                    Protocol = config.Protocol,
+                    HardStone = config.HardStone,
+                    PreRunChecks = lastReadinessReport?.Checks ?? [],
+                    PreRunState = preRunState,
+                }.WithProfile(profile),
+                productionTestCancellation.Token);
             lastReportDirectory = result.OutputDirectory;
             LiveStatusText.Text = $"{result.OverallResult}: {result.TestId}";
             MotionBadge.Text = result.OverallResult;
@@ -443,8 +498,39 @@ public partial class MainWindow : Window
         }
         finally
         {
+            productionTestCancellation?.Dispose();
+            productionTestCancellation = null;
+            testRunning = false;
             SetBusy(false);
         }
+    }
+
+    private void StopTestButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (productionTestCancellation is null || productionTestCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+
+        StopTestButton.IsEnabled = false;
+        LiveStatusText.Text = IsChinese ? "正在停止..." : "Stopping...";
+        MotionBadge.Text = IsChinese ? "停止中" : "Stopping";
+        MotionBadge.Foreground = Brush("#6A4A00");
+        WriteOutput("Operator stop requested.");
+        productionTestCancellation.Cancel();
+    }
+
+    private void WriteHardStoneState(HardStoneStateSnapshot snapshot)
+    {
+        WriteOutput($"HardStone state: {(snapshot.Ok ? "OK" : "FAILED")}");
+        WriteOutput(snapshot.Message);
+        WriteOutput($"Ti5: index={snapshot.Ti5SlaveIndex}, op={snapshot.EtherCatOperational}, vendor=0x{snapshot.VendorId:X8}, product=0x{snapshot.ProductCode:X8}, revision=0x{snapshot.RevisionNumber:X8}");
+        WriteOutput($"Drive: statusword=0x{snapshot.Statusword:X4}, controlword=0x{snapshot.Controlword:X4}, enabled={snapshot.Enabled}, watchdog={snapshot.WatchdogOk}, error={snapshot.CommandError}");
+        WriteOutput($"Mode: command={snapshot.ModeOfOperationCommand}, display={snapshot.ModeOfOperationDisplay}");
+        WriteOutput($"Diagnosis: {CiA402StateDiagnosis.Describe(snapshot.Statusword, snapshot.Controlword, snapshot.CommandError, snapshot.Enabled, snapshot.ModeOfOperationCommand, snapshot.ModeOfOperationDisplay)}");
+        WriteOutput($"Mailbox: command_code={snapshot.CommandCode}, command_sequence={snapshot.CommandSequence}, command_ack={snapshot.CommandAck}, heartbeat_sequence={snapshot.HeartbeatSequence}, heartbeat_ack={snapshot.HeartbeatAck}");
+        WriteOutput($"Counts: zero={snapshot.ZeroPositionCounts}, actual={snapshot.ActualPositionCounts}, target={snapshot.TargetPositionCounts}, relative={snapshot.TargetRelativeCounts}");
+        WriteOutput($"Position: actual={snapshot.ActualPositionDegrees:F6}deg, target={snapshot.TargetPositionDegrees:F6}deg, following_error={snapshot.FollowingErrorDegrees:F6}deg, velocity_counts={snapshot.ActualVelocityCounts}, torque={snapshot.TorqueActual}");
     }
 
     private void OpenReportButton_Click(object sender, RoutedEventArgs e)
@@ -469,14 +555,24 @@ public partial class MainWindow : Window
 
     private void SetBusy(bool busy)
     {
+        uiBusy = busy;
         RunPreflightButton.IsEnabled = !busy;
+        ReadHardStoneStateButton.IsEnabled = !busy;
         ImportEsiButton.IsEnabled = !busy;
         ImportLastEsiButton.IsEnabled = !busy;
         PrepareTwinCatButton.IsEnabled = !busy;
         AutomationSmokeButton.IsEnabled = !busy;
         ScanSpikeButton.IsEnabled = !busy;
         CheckAdsSymbolsButton.IsEnabled = !busy;
-        StartTestButton.IsEnabled = !busy;
+        UpdateMotionControls();
+    }
+
+    private void UpdateMotionControls()
+    {
+        var motionAllowed = !uiBusy && productionGate.ReadyForMotion && SafetyConfirmed();
+        VerifyOneDegButton.IsEnabled = motionAllowed;
+        StartTestButton.IsEnabled = motionAllowed;
+        StopTestButton.IsEnabled = uiBusy && testRunning && productionTestCancellation is not null && !productionTestCancellation.IsCancellationRequested;
     }
 
     private void WriteOutput(string line)

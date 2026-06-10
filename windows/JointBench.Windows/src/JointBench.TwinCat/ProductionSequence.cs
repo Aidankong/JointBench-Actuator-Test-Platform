@@ -2,16 +2,16 @@ namespace JointBench.TwinCat;
 
 public sealed class ProductionTestSequenceRunner
 {
-    private readonly AdsMotionAdapter adapter;
+    private readonly IMotionAdapter adapter;
     private readonly TestReportWriter reportWriter;
     private readonly Action<string>? progress;
 
-    public ProductionTestSequenceRunner(AdsMotionAdapter adapter, TestReportWriter reportWriter)
+    public ProductionTestSequenceRunner(IMotionAdapter adapter, TestReportWriter reportWriter)
         : this(adapter, reportWriter, null)
     {
     }
 
-    public ProductionTestSequenceRunner(AdsMotionAdapter adapter, TestReportWriter reportWriter, Action<string>? progress)
+    public ProductionTestSequenceRunner(IMotionAdapter adapter, TestReportWriter reportWriter, Action<string>? progress)
     {
         this.adapter = adapter;
         this.reportWriter = reportWriter;
@@ -37,6 +37,17 @@ public sealed class ProductionTestSequenceRunner
         try
         {
             Event($"Test {testId} initialized.");
+            foreach (var check in request.PreRunChecks)
+            {
+                Event($"Pre-run check [{check.Status}] {check.Name}: {check.Message}{FormatCheckDetail(check.Detail)}");
+            }
+
+            if (request.PreRunState is { } preRunState)
+            {
+                Event(
+                    $"Pre-run state: op={preRunState.EtherCatOperational}, enabled={preRunState.Enabled}, error={preRunState.CommandError}, statusword=0x{preRunState.Statusword:X4}, actual={preRunState.ActualPositionDegrees:F4}deg.");
+            }
+
             await adapter.ConnectAsync(cancellationToken);
             Event("ADS adapter connected.");
             var runtimeConfig = await adapter.ApplyRuntimeConfigAsync(request.Safety, request.Scaling, cancellationToken);
@@ -64,6 +75,10 @@ public sealed class ProductionTestSequenceRunner
 
             stages.Add(StageResult.Pass("EnableOnly"));
             Event($"Enable-only stage passed. statusword=0x{enableSample.Statusword ?? 0:X4}, position={enableSample.ActualPositionDegrees:F3}deg.");
+            if (MailboxDetail(enableSample) is { } enableMailboxDetail)
+            {
+                Event($"EnableOnly mailbox: {enableMailboxDetail}");
+            }
 
             foreach (var config in request.Tests)
             {
@@ -74,10 +89,17 @@ public sealed class ProductionTestSequenceRunner
                     Event("Remaining motion stages skipped because 1deg did not pass.");
                     break;
                 }
+
+                if (stage.Result != "PASS")
+                {
+                    Event("Remaining motion stages skipped because the previous stage did not pass.");
+                    break;
+                }
             }
 
             await adapter.EmergencyStopAsync(cancellationToken);
             Event("Stop requested after sequence.");
+            await RecordPostStopSampleAsync(samples, Event, cancellationToken);
             return Finish(request, testId, outputDirectory, device, stages, samples, events);
         }
         catch (Exception exc)
@@ -143,6 +165,10 @@ public sealed class ProductionTestSequenceRunner
             if (index == 0 || index == sampleCount - 1 || index % Math.Max(1, (int)(config.SampleRateHz / 2.0)) == 0)
             {
                 eventSink($"{config.Name}: target={config.TargetPositionDegrees:F3}deg actual={state.ActualPositionDegrees:F3}deg current={state.CurrentA:F2}A temp={state.TemperatureC:F1}C.");
+                if (MailboxDetail(state) is { } mailboxDetail)
+                {
+                    eventSink($"{config.Name} mailbox: {mailboxDetail}");
+                }
             }
 
             if (!adapter.IsSimulation)
@@ -168,12 +194,31 @@ public sealed class ProductionTestSequenceRunner
         var aborted = false;
 
         eventSink($"Stage {config.Name} started.");
+        var alignment = await AlignRampStartAsync(config, allSamples, eventSink, cancellationToken);
+        if (alignment is not null)
+        {
+            return alignment;
+        }
+
         var sampleCount = Math.Max(2, (int)(config.DurationSeconds * config.SampleRateHz) + 1);
+        var commandTarget = config.StartPositionDegrees;
+        var nominalStepDegrees = Math.Abs(config.TargetPositionDegrees - config.StartPositionDegrees) / (sampleCount - 1);
+        var advanceToleranceDegrees = RampAdvanceToleranceDegrees(config);
         for (var index = 0; index < sampleCount; index++)
         {
             var timestamp = index * config.SamplePeriodSeconds;
-            var progress = (double)index / (sampleCount - 1);
-            var commandTarget = config.StartPositionDegrees + ((config.TargetPositionDegrees - config.StartPositionDegrees) * progress);
+            if (index > 0)
+            {
+                var previousState = stageSamples.Count > 0 ? stageSamples[^1] : null;
+                var commandError = previousState is null
+                    ? 0.0
+                    : Math.Abs(commandTarget - previousState.ActualPositionDegrees);
+                if (commandError <= advanceToleranceDegrees)
+                {
+                    commandTarget = MoveTowards(commandTarget, config.TargetPositionDegrees, nominalStepDegrees);
+                }
+            }
+
             await adapter.SendPositionCommandAsync(commandTarget, cancellationToken);
 
             var state = await adapter.SampleAsync(config.SamplePeriodSeconds, timestamp, cancellationToken);
@@ -193,6 +238,10 @@ public sealed class ProductionTestSequenceRunner
             if (index == 0 || index == sampleCount - 1 || index % Math.Max(1, (int)config.SampleRateHz) == 0)
             {
                 eventSink($"{config.Name}: target={commandTarget:F3}deg actual={state.ActualPositionDegrees:F3}deg current={state.CurrentA:F2}A temp={state.TemperatureC:F1}C.");
+                if (MailboxDetail(state) is { } mailboxDetail)
+                {
+                    eventSink($"{config.Name} mailbox: {mailboxDetail}");
+                }
             }
 
             if (!adapter.IsSimulation)
@@ -204,6 +253,61 @@ public sealed class ProductionTestSequenceRunner
         var judgment = JudgeRamp(config, stageSamples, aborted, failureReasons);
         eventSink($"Stage {config.Name} finished with {judgment.Result}.");
         return new StageResult(config.Name, judgment.Result, judgment.FailureReasons);
+    }
+
+    private async Task<StageResult?> AlignRampStartAsync(
+        TestConfig config,
+        List<ActuatorState> allSamples,
+        Action<string> eventSink,
+        CancellationToken cancellationToken)
+    {
+        await adapter.SendPositionCommandAsync(config.StartPositionDegrees, cancellationToken);
+        var tolerance = RampStartAlignmentToleranceDegrees(config);
+        var samplePeriod = Math.Max(0.05, config.SamplePeriodSeconds);
+        var maxSamples = Math.Max(1, (int)(Math.Min(12.0, config.MaxSettlingTimeSeconds) / samplePeriod));
+        for (var index = 0; index < maxSamples; index++)
+        {
+            var state = await adapter.SampleAsync(samplePeriod, 0.0, cancellationToken);
+            allSamples.Add(state);
+            var safetyFailure = SafetyFailure(state, config);
+            if (safetyFailure is not null)
+            {
+                eventSink($"Safety abort while aligning {config.Name}: {safetyFailure}");
+                await adapter.EmergencyStopAsync(cancellationToken);
+                return StageResult.Aborted(config.Name, [safetyFailure]);
+            }
+
+            var error = Math.Abs(config.StartPositionDegrees - state.ActualPositionDegrees);
+            if (error <= tolerance)
+            {
+                eventSink($"{config.Name}: start aligned at {state.ActualPositionDegrees:F3}deg.");
+                return null;
+            }
+
+            if (!adapter.IsSimulation)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(samplePeriod), cancellationToken);
+            }
+        }
+
+        var message = $"{config.Name} could not align to start {config.StartPositionDegrees:F3}deg before ramp.";
+        eventSink(message);
+        await adapter.EmergencyStopAsync(cancellationToken);
+        return StageResult.Aborted(config.Name, [message]);
+    }
+
+    private async Task RecordPostStopSampleAsync(
+        List<ActuatorState> allSamples,
+        Action<string> eventSink,
+        CancellationToken cancellationToken)
+    {
+        var state = await adapter.SampleAsync(0.0, allSamples.Count > 0 ? allSamples[^1].TimestampSeconds : 0.0, cancellationToken);
+        allSamples.Add(state);
+        eventSink($"Post-stop state: statusword=0x{state.Statusword ?? 0:X4}, controlword=0x{state.Controlword ?? 0:X4}, enabled={state.Enabled}, position={state.ActualPositionDegrees:F3}deg.");
+        if (MailboxDetail(state) is { } mailboxDetail)
+        {
+            eventSink($"PostStop mailbox: {mailboxDetail}");
+        }
     }
 
     private ProductionSequenceResult Finish(
@@ -227,11 +331,18 @@ public sealed class ProductionTestSequenceRunner
             device,
             stages,
             samples,
-            new TestConfigSnapshot(request.Ads, request.Safety, request.Tests, request.Scaling),
-            events);
+            new TestConfigSnapshot(request.Ads, request.Safety, request.Tests, request.Scaling, request.Protocol, request.HardStone),
+            events) with
+        {
+            PreRunChecks = request.PreRunChecks,
+            PreRunState = request.PreRunState,
+        };
         reportWriter.Write(result);
         return result;
     }
+
+    private static string FormatCheckDetail(string? detail) =>
+        string.IsNullOrWhiteSpace(detail) ? string.Empty : $" ({detail})";
 
     private static string? SafetyFailure(ActuatorState state, TestConfig config)
     {
@@ -253,6 +364,12 @@ public sealed class ProductionTestSequenceRunner
         if (Math.Abs(state.CurrentA) > config.MaxCurrentA)
         {
             return $"Current {state.CurrentA:F2}A exceeded {config.MaxCurrentA:F2}A.";
+        }
+
+        var followingError = state.FollowingErrorDegrees ?? state.TargetPositionDegrees - state.ActualPositionDegrees;
+        if (Math.Abs(followingError) > config.MaxFollowingErrorDegrees)
+        {
+            return $"Following error {followingError:F3}deg exceeded {config.MaxFollowingErrorDegrees:F3}deg.";
         }
 
         if (state.TemperatureC > config.MaxTemperatureC)
@@ -289,5 +406,32 @@ public sealed class ProductionTestSequenceRunner
         }
 
         return StepJudgment.Pass();
+    }
+
+    private static double RampStartAlignmentToleranceDegrees(TestConfig config) =>
+        Math.Max(0.05, Math.Min(0.2, Math.Min(config.MaxSteadyStateErrorDegrees, config.MaxFollowingErrorDegrees * 0.5)));
+
+    private static double RampAdvanceToleranceDegrees(TestConfig config) =>
+        Math.Max(0.05, Math.Min(0.5, Math.Min(config.MaxSteadyStateErrorDegrees, config.MaxFollowingErrorDegrees * 0.5)));
+
+    private static double MoveTowards(double current, double target, double maxStep)
+    {
+        if (maxStep <= 0.0)
+        {
+            return target;
+        }
+
+        var delta = target - current;
+        return Math.Abs(delta) <= maxStep ? target : current + Math.Sign(delta) * maxStep;
+    }
+
+    private static string? MailboxDetail(ActuatorState state)
+    {
+        if (!string.Equals(state.Protocol, "hardstone_swd", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return $"command_ack={state.DebugCommandAck}, heartbeat_ack={state.DebugHeartbeatAck}, target_relative_counts={state.DebugTargetRelativeCounts}, target_counts={state.DebugTargetCounts}, actual_counts={state.DebugActualCounts}";
     }
 }

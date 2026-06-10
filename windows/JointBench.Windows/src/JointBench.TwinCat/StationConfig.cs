@@ -11,7 +11,9 @@ public sealed record StationConfig(
     string SymbolPrefix,
     int VendorId,
     int ProductCode,
-    int RevisionNumber)
+    int RevisionNumber,
+    string Protocol = "twincat_ads",
+    HardStoneStationOptions? HardStone = null)
 {
     public bool MotionAllowed
     {
@@ -43,6 +45,11 @@ public sealed record StationConfig(
         }
     }
 }
+
+public sealed record HardStoneStationOptions(
+    string FirmwareElfPath,
+    int AdapterSpeedKHz,
+    double CountsPerDegree);
 
 public sealed record StationScaling(
     int EncoderCountsPerRev,
@@ -77,6 +84,8 @@ public static class StationConfigLoader
         var tests = LoadYaml(Path.Combine(root.FullName, "tests.yaml"));
 
         var adsNode = Map(bus, "ads");
+        var protocol = String(bus, "protocol", adsNode.Count > 0 ? "twincat_ads" : "hardstone_swd");
+        var hardStoneNode = Map(bus, "hardstone");
         var deviceNode = Map(device, "device");
         var deviceAdsNode = Map(device, "ads");
         var scalingNode = Map(device, "scaling");
@@ -103,6 +112,17 @@ public static class StationConfigLoader
             Double(scalingNode, "temperature_scale_c_per_unit", 1.0),
             Bool(scalingNode, "auto_zero_on_check", false));
 
+        var hardStone = new HardStoneStationOptions(
+            ResolvePath(root.FullName, String(
+                hardStoneNode,
+                "firmware_elf",
+                Path.Combine("data", "ethercat-firmware-candidates", "ti5-safe", "build-gcc", "ysf4_ti5_ethercat_master.elf"))),
+            Int(hardStoneNode, "adapter_speed_khz", 1000),
+            Double(
+                hardStoneNode,
+                "counts_per_degree",
+                scaling.EncoderCountsPerRev * scaling.GearRatio / 360.0));
+
         return new StationConfig(
             ads,
             safetyLimits,
@@ -111,7 +131,9 @@ public static class StationConfigLoader
             ads.SymbolPrefix,
             Int(deviceNode, "vendor_id", 0x00522227),
             Int(deviceNode, "product_code", 0x00009253),
-            Int(deviceNode, "revision_number", 0x00010005));
+            Int(deviceNode, "revision_number", 0x00010005),
+            protocol,
+            hardStone);
     }
 
     private static IReadOnlyList<TestConfig> ReadTests(string stationDirectory, IReadOnlyDictionary<object, object?> root, SafetyLimits safety)
@@ -129,15 +151,15 @@ public static class StationConfigLoader
                 String(test, "name", DefaultTestName(target, motionProfile)),
                 Double(test, "start_position_deg", 0.0),
                 target,
-                Double(test, "duration_s", isRamp ? 36.0 : Math.Abs(target) <= 1.0 ? 2.5 : 3.0),
-                Double(test, "sample_rate_hz", isRamp ? 10.0 : 100.0),
+                Double(test, "duration_s", isRamp ? 144.0 : Math.Abs(target) <= 1.0 ? 2.5 : 3.0),
+                Double(test, "sample_rate_hz", isRamp ? 5.0 : 100.0),
                 Double(test, "settling_band_pct", 2.0),
                 Math.Max(Math.Abs(safety.MinPositionDegrees), Math.Abs(safety.MaxPositionDegrees)),
                 safety.MaxCurrentA,
                 safety.MaxTemperatureC,
                 safety.MaxFollowingErrorDegrees,
                 Double(test, "max_overshoot_pct", 10.0),
-                Double(test, "max_settling_time_s", isRamp ? Double(test, "duration_s", 36.0) + 2.0 : Math.Abs(target) <= 1.0 ? 1.0 : 1.2),
+                Double(test, "max_settling_time_s", isRamp ? Double(test, "duration_s", 144.0) + 2.0 : Math.Abs(target) <= 1.0 ? 1.0 : 1.2),
                 Double(test, "max_steady_state_error_deg", isRamp ? 1.0 : Math.Abs(target) <= 1.0 ? 0.2 : 0.5),
                 motionProfile));
         }
@@ -237,5 +259,33 @@ public static class StationConfigLoader
         }
 
         return Math.Abs(target) <= 1.0 ? "PositionStep1Deg" : "PositionStep5Deg";
+    }
+
+    private static string ResolvePath(string stationDirectory, string path)
+    {
+        if (Path.IsPathRooted(path))
+        {
+            return path;
+        }
+
+        var candidateFromStation = Path.GetFullPath(Path.Combine(stationDirectory, path));
+        if (File.Exists(candidateFromStation))
+        {
+            return candidateFromStation;
+        }
+
+        var current = new DirectoryInfo(Environment.CurrentDirectory);
+        while (current is not null)
+        {
+            var repoCandidate = Path.GetFullPath(Path.Combine(current.FullName, path));
+            if (File.Exists(repoCandidate))
+            {
+                return repoCandidate;
+            }
+
+            current = current.Parent;
+        }
+
+        return candidateFromStation;
     }
 }

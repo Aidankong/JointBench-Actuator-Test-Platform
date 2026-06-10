@@ -188,13 +188,14 @@ public sealed class FakeAdsSymbolClient : IAdsSymbolClient
     }
 }
 
-public sealed class AdsMotionAdapter
+public sealed class AdsMotionAdapter : IMotionAdapter
 {
     private readonly IAdsSymbolClient client;
     private readonly AdsConnectionOptions options;
     private readonly TimeSpan enableTimeout;
     private readonly TimeSpan enablePollInterval;
     private readonly TimeSpan startPulseDuration;
+    private readonly int setpointPulseRepeatCount;
     private readonly double maxTargetAbsDegrees;
     private int commandSequence;
     private double targetPositionDegrees;
@@ -205,6 +206,7 @@ public sealed class AdsMotionAdapter
         TimeSpan? enableTimeout = null,
         TimeSpan? enablePollInterval = null,
         TimeSpan? startPulseDuration = null,
+        int setpointPulseRepeatCount = 3,
         double maxTargetAbsDegrees = 5.0)
     {
         this.client = client;
@@ -212,6 +214,7 @@ public sealed class AdsMotionAdapter
         this.enableTimeout = enableTimeout ?? TimeSpan.FromSeconds(8);
         this.enablePollInterval = enablePollInterval ?? TimeSpan.FromMilliseconds(20);
         this.startPulseDuration = startPulseDuration ?? TimeSpan.FromMilliseconds(30);
+        this.setpointPulseRepeatCount = Math.Max(1, setpointPulseRepeatCount);
         this.maxTargetAbsDegrees = maxTargetAbsDegrees;
     }
 
@@ -269,6 +272,11 @@ public sealed class AdsMotionAdapter
             }
 
             await client.WriteAsync($"{root}.fTi5ZeroOffsetDeg", zeroOffset, cancellationToken);
+            targetPositionDegrees = 0.0;
+            await WriteAsync("fTargetPositionDeg", targetPositionDegrees, cancellationToken);
+            await WriteAsync("bStart", false, cancellationToken);
+            await WriteAsync("bStop", false, cancellationToken);
+            await BumpCommandSequenceAsync(cancellationToken);
             await PulseResetFaultAsync(cancellationToken);
             var detail = scaling.AutoZeroOnCheck
                 ? $"auto-zero applied; zero_offset_deg={zeroOffset:F6}"
@@ -319,13 +327,18 @@ public sealed class AdsMotionAdapter
         targetPositionDegrees = positionDegrees;
         await WriteAsync("fTargetPositionDeg", positionDegrees, cancellationToken);
         await BumpCommandSequenceAsync(cancellationToken);
-        await WriteAsync("bStart", false, cancellationToken);
-        await DelayStartPulseAsync(cancellationToken);
-        await BumpCommandSequenceAsync(cancellationToken);
-        await WriteAsync("bStart", true, cancellationToken);
-        await DelayStartPulseAsync(cancellationToken);
-        await BumpCommandSequenceAsync(cancellationToken);
-        await WriteAsync("bStart", false, cancellationToken);
+        for (var index = 0; index < setpointPulseRepeatCount; index++)
+        {
+            await WriteAsync("bStart", false, cancellationToken);
+            await DelayStartPulseAsync(cancellationToken);
+            await BumpCommandSequenceAsync(cancellationToken);
+            await WriteAsync("bStart", true, cancellationToken);
+            await DelayStartPulseAsync(cancellationToken);
+            await BumpCommandSequenceAsync(cancellationToken);
+            await WriteAsync("bStart", false, cancellationToken);
+            await DelayStartPulseAsync(cancellationToken);
+            await BumpCommandSequenceAsync(cancellationToken);
+        }
     }
 
     public async Task<ActuatorState> SampleAsync(double dtSeconds, double timestampSeconds, CancellationToken cancellationToken)
@@ -358,10 +371,13 @@ public sealed class AdsMotionAdapter
     public async Task EmergencyStopAsync(CancellationToken cancellationToken)
     {
         await BumpCommandSequenceAsync(cancellationToken);
+        await WriteAsync("bStart", false, cancellationToken);
         await WriteAsync("bStop", true, cancellationToken);
         await WriteAsync("bEnable", false, cancellationToken);
         OperationEnabled = false;
     }
+
+    public void Dispose() => client.Dispose();
 
     private Task<object?> ReadAsync(string key, Type type, CancellationToken cancellationToken) =>
         client.ReadAsync(Symbol(key), type, cancellationToken);
